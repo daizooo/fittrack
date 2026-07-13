@@ -1,4 +1,3 @@
-export type EquipmentType = 'bodyweight' | 'tube' | 'assist' | 'vest'
 export type ExerciseType = 'normal' | 'duration' | 'tabata'
 export type RecordType = 'workout' | 'rest'
 export type TimerType = 'work' | 'rest' | 'tabata_work' | 'tabata_rest'
@@ -6,6 +5,22 @@ export type TimerType = 'work' | 'rest' | 'tabata_work' | 'tabata_rest'
 export interface EquipmentOption {
   label: string
   weight: number
+}
+
+export interface EquipmentWeightConfig {
+  type: 'fixed' | 'variable'
+  options?: EquipmentOption[]  // fixed: explicit option list
+  min?: number                 // variable: range
+  max?: number
+  step?: number
+}
+
+export interface EquipmentItem {
+  id: string                      // 'bodyweight'|'tube'|'assist'|'vest' for defaults, uuid for custom
+  name: string
+  category: 'load' | 'data'
+  direction: '+' | '-' | null     // null = bodyweight-like
+  weight: EquipmentWeightConfig | null
 }
 
 export interface Exercise {
@@ -16,7 +31,7 @@ export interface Exercise {
   defaultReps: number
   defaultWeight: number
   interval: number
-  equipmentType: EquipmentType
+  equipmentType: string           // references EquipmentItem.id
   tabataWork?: number
   tabataRest?: number
   tabataCycles?: number
@@ -74,4 +89,19 @@ export interface SessionData {
   day: string
   category: string
   exercises: SessionExercise[]
+}
+
+export interface Profile {
+  height: number | null
+  birth_date: string | null    // YYYY-MM-DD
+  gender: 'male' | 'female' | null
+  goals: string[]
+  schedule: Record<string, { enabled: boolean; minutes: number }>
+}
+
+export interface BodyLog {
+  id: string
+  date: string    // YYYY-MM-DD
+  weight: number | null
+  body_fat: number | null
 }

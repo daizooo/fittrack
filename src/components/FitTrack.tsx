@@ -2,12 +2,15 @@ import React, { useState, useMemo, useEffect, useRef } from 'react'
 import {
   Dumbbell, CalendarDays, History, BarChart3, Plus, Minus, CheckCircle,
   Flame, Trophy, Zap, Target, Moon, Play, ChevronLeft, ChevronRight,
-  Timer, X, Edit3, Trash2, Save, LogOut
+  Timer, X, Edit3, Trash2, Save, LogOut, User
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
+import { generateEquipmentOptions, DEFAULT_LOAD_EQUIPMENT } from '../lib/equipmentUtils'
+import TabProfile from './TabProfile'
 import type {
   WorkoutPlan, WorkoutRecord, TimerState, SessionData,
-  SessionExercise, Exercise, SetData, EquipmentOption
+  SessionExercise, Exercise, SetData, EquipmentOption,
+  EquipmentItem, Profile, BodyLog
 } from '../types'
 
 // ─── Audio ───────────────────────────────────────────────────────────────────
@@ -42,33 +45,6 @@ const playBeep = (freq = 440, duration = 0.1, vol = 0.1) => {
 }
 
 // ─── Constants ───────────────────────────────────────────────────────────────
-
-const EQUIPMENT_TYPES = {
-  bodyweight: { name: '自重のみ', options: [{ label: 'ー', weight: 0 }] },
-  tube: {
-    name: 'チューブ', options: [
-      { label: 'ー', weight: 0 }, { label: '赤 (+9kg)', weight: 9 },
-      { label: '黒 (+28kg)', weight: 28 }, { label: '紫 (+49.5kg)', weight: 49.5 },
-      { label: '緑 (+66.5kg)', weight: 66.5 }
-    ]
-  },
-  assist: {
-    name: '補助チューブ', options: [
-      { label: 'ー', weight: 0 }, { label: '1本 (-24kg)', weight: -24 },
-      { label: '2本 (-47kg)', weight: -47 }, { label: '3本 (-70kg)', weight: -70 }
-    ]
-  },
-  vest: {
-    name: 'ウェイトベスト', options: [
-      { label: 'ー', weight: 0 }, { label: '1 (+5.25kg)', weight: 5.25 },
-      { label: '2 (+8kg)', weight: 8 }, { label: '3 (+10.75kg)', weight: 10.75 },
-      { label: '4 (+13.5kg)', weight: 13.5 }, { label: '5 (+16.25kg)', weight: 16.25 },
-      { label: '6 (+19kg)', weight: 19 }, { label: '7 (+21.75kg)', weight: 21.75 },
-      { label: '8 (+24.5kg)', weight: 24.5 }, { label: '9 (+27.25kg)', weight: 27.25 },
-      { label: '10 (+30kg)', weight: 30 }
-    ]
-  }
-} as const
 
 const initialWorkoutPlans: WorkoutPlan[] = [
   { day: '月', category: '完全休養', exercises: [] },
@@ -194,6 +170,9 @@ export default function FitTrack({ userId }: FitTrackProps) {
   const [activeTab, setActiveTab] = useState('plan')
   const [plans, setPlans] = useState<WorkoutPlan[]>([])
   const [records, setRecords] = useState<WorkoutRecord[]>([])
+  const [equipment, setEquipment] = useState<EquipmentItem[]>([])
+  const [profile, setProfile] = useState<Profile | null>(null)
+  const [bodyLogs, setBodyLogs] = useState<BodyLog[]>([])
   const [dataLoading, setDataLoading] = useState(true)
   const [filterMode, setFilterMode] = useState<'month' | 'year'>('month')
   const [currentDate, setCurrentDate] = useState(new Date())
@@ -217,6 +196,14 @@ export default function FitTrack({ userId }: FitTrackProps) {
   useEffect(() => { activeTimerRef.current = activeTimer }, [activeTimer])
 
   const [selectedRecordDetail, setSelectedRecordDetail] = useState<WorkoutRecord | null>(null)
+
+  const equipmentOptionsMap = useMemo(() => {
+    const map = new Map<string, EquipmentOption[]>()
+    equipment.filter(e => e.category === 'load').forEach(item => {
+      map.set(item.id, generateEquipmentOptions(item))
+    })
+    return map
+  }, [equipment])
 
   // ── Data loading ────────────────────────────────────────────────────────────
 
@@ -269,6 +256,69 @@ export default function FitTrack({ userId }: FitTrackProps) {
             category: r.category as string | undefined,
             type: r.type as 'workout' | 'rest',
             exercises: (r.exercises ?? []) as SessionExercise[]
+          })))
+        }
+
+        // Load equipment
+        const { data: equipmentData } = await supabase
+          .from('equipment')
+          .select('*')
+          .eq('user_id', userId)
+          .order('created_at', { ascending: true })
+
+        if (equipmentData && equipmentData.length > 0) {
+          setEquipment(equipmentData.map(e => ({
+            id: e.id as string,
+            name: e.name as string,
+            category: e.category as 'load' | 'data',
+            direction: e.direction as '+' | '-' | null,
+            weight: e.weight as EquipmentItem['weight']
+          })))
+        } else {
+          // First login — seed default load equipment
+          setEquipment(DEFAULT_LOAD_EQUIPMENT)
+          await supabase.from('equipment').insert(
+            DEFAULT_LOAD_EQUIPMENT.map(item => ({
+              id: item.id,
+              user_id: userId,
+              name: item.name,
+              category: item.category,
+              direction: item.direction,
+              weight: item.weight
+            }))
+          )
+        }
+
+        // Load profile
+        const { data: profileData } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('user_id', userId)
+          .single()
+
+        if (profileData) {
+          setProfile({
+            height: profileData.height as number | null,
+            birth_date: profileData.birth_date as string | null,
+            gender: profileData.gender as 'male' | 'female' | null,
+            goals: (profileData.goals ?? []) as string[],
+            schedule: (profileData.schedule ?? {}) as Profile['schedule']
+          })
+        }
+
+        // Load body logs
+        const { data: bodyLogsData } = await supabase
+          .from('body_logs')
+          .select('*')
+          .eq('user_id', userId)
+          .order('date', { ascending: false })
+
+        if (bodyLogsData) {
+          setBodyLogs(bodyLogsData.map(b => ({
+            id: b.id as string,
+            date: b.date as string,
+            weight: b.weight as number | null,
+            body_fat: b.body_fat as number | null
           })))
         }
       } catch (err) {
@@ -517,8 +567,8 @@ export default function FitTrack({ userId }: FitTrackProps) {
                       onChange={e => updateEditingExercise(ex.id, 'equipmentType', e.target.value)}
                       className="w-full bg-gray-50 border border-gray-200 rounded-lg p-2 text-sm font-bold outline-none"
                     >
-                      {Object.keys(EQUIPMENT_TYPES).map(key => (
-                        <option key={key} value={key}>{EQUIPMENT_TYPES[key as keyof typeof EQUIPMENT_TYPES].name}</option>
+                      {equipment.filter(e => e.category === 'load').map(item => (
+                        <option key={item.id} value={item.id}>{item.name}</option>
                       ))}
                     </select>
                   </div>
@@ -633,7 +683,7 @@ export default function FitTrack({ userId }: FitTrackProps) {
         return {
           ...ex,
           inherited,
-          options: [...(EQUIPMENT_TYPES[ex.equipmentType]?.options ?? EQUIPMENT_TYPES.bodyweight.options)],
+          options: equipmentOptionsMap.get(ex.equipmentType) ?? [{ label: 'ー', weight: 0 }],
           targetSets: inherited && lastEx ? lastEx.sets.length : ex.targetSets,
           sets
         }
@@ -1150,17 +1200,20 @@ export default function FitTrack({ userId }: FitTrackProps) {
   const Navigation = () => (
     <div className="fixed bottom-0 left-0 w-full bg-white/90 backdrop-blur-xl border-t border-gray-200 pb-safe z-40 shadow-[0_-10px_40px_rgba(0,0,0,0.05)]">
       <div className="flex justify-around items-center h-20 max-w-md mx-auto px-2">
-        <button onClick={() => setActiveTab('plan')} className={`flex flex-col items-center justify-center w-1/4 h-full transition-all ${activeTab === 'plan' ? 'text-blue-600 -translate-y-1' : 'text-gray-400'}`}>
+        <button onClick={() => setActiveTab('plan')} className={`flex flex-col items-center justify-center w-1/5 h-full transition-all ${activeTab === 'plan' ? 'text-blue-600 -translate-y-1' : 'text-gray-400'}`}>
           <CalendarDays size={24} strokeWidth={activeTab === 'plan' ? 2.5 : 2} /><span className="text-[10px] mt-1 font-bold">プラン</span>
         </button>
-        <button onClick={() => setActiveTab('record')} className={`flex flex-col items-center justify-center w-1/4 h-full transition-all ${activeTab === 'record' ? 'text-blue-600 -translate-y-1' : 'text-gray-400'}`}>
+        <button onClick={() => setActiveTab('record')} className={`flex flex-col items-center justify-center w-1/5 h-full transition-all ${activeTab === 'record' ? 'text-blue-600 -translate-y-1' : 'text-gray-400'}`}>
           <Dumbbell size={24} strokeWidth={activeTab === 'record' ? 2.5 : 2} /><span className="text-[10px] mt-1 font-bold">ワークアウト</span>
         </button>
-        <button onClick={() => setActiveTab('history')} className={`flex flex-col items-center justify-center w-1/4 h-full transition-all ${activeTab === 'history' ? 'text-blue-600 -translate-y-1' : 'text-gray-400'}`}>
+        <button onClick={() => setActiveTab('history')} className={`flex flex-col items-center justify-center w-1/5 h-full transition-all ${activeTab === 'history' ? 'text-blue-600 -translate-y-1' : 'text-gray-400'}`}>
           <History size={24} strokeWidth={activeTab === 'history' ? 2.5 : 2} /><span className="text-[10px] mt-1 font-bold">履歴</span>
         </button>
-        <button onClick={() => setActiveTab('analytics')} className={`flex flex-col items-center justify-center w-1/4 h-full transition-all ${activeTab === 'analytics' ? 'text-blue-600 -translate-y-1' : 'text-gray-400'}`}>
+        <button onClick={() => setActiveTab('analytics')} className={`flex flex-col items-center justify-center w-1/5 h-full transition-all ${activeTab === 'analytics' ? 'text-blue-600 -translate-y-1' : 'text-gray-400'}`}>
           <BarChart3 size={24} strokeWidth={activeTab === 'analytics' ? 2.5 : 2} /><span className="text-[10px] mt-1 font-bold">分析</span>
+        </button>
+        <button onClick={() => setActiveTab('profile')} className={`flex flex-col items-center justify-center w-1/5 h-full transition-all ${activeTab === 'profile' ? 'text-blue-600 -translate-y-1' : 'text-gray-400'}`}>
+          <User size={24} strokeWidth={activeTab === 'profile' ? 2.5 : 2} /><span className="text-[10px] mt-1 font-bold">プロフィール</span>
         </button>
       </div>
     </div>
@@ -1204,6 +1257,19 @@ export default function FitTrack({ userId }: FitTrackProps) {
         {activeTab === 'record' && <TabRecord />}
         {activeTab === 'history' && <TabHistory />}
         {activeTab === 'analytics' && <TabAnalytics />}
+        {activeTab === 'profile' && (
+          <TabProfile
+            userId={userId}
+            equipment={equipment}
+            setEquipment={setEquipment}
+            profile={profile}
+            setProfile={setProfile}
+            bodyLogs={bodyLogs}
+            setBodyLogs={setBodyLogs}
+            plans={plans}
+            records={records}
+          />
+        )}
       </main>
 
       <Navigation />
