@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect, useRef } from 'react'
 import {
   Dumbbell, CalendarDays, History, BarChart3, Plus, Minus, CheckCircle,
   Flame, Trophy, Zap, Target, Moon, Play, ChevronLeft, ChevronRight,
-  Timer, X, Edit3, Trash2, Save, LogOut, User
+  Timer, X, Edit3, Trash2, Save, LogOut, User, Link2, Unlink2
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { generateEquipmentOptions, DEFAULT_LOAD_EQUIPMENT } from '../lib/equipmentUtils'
@@ -510,6 +510,49 @@ export default function FitTrack({ userId }: FitTrackProps) {
       setEditingPlanData(prev => prev ? ({ ...prev, exercises: [...prev.exercises, newEx] }) : null)
     }
 
+    const linkSuperset = (exId1: string, exId2: string) => {
+      setEditingPlanData(prev => {
+        if (!prev) return null
+        const ex1 = prev.exercises.find(e => e.id === exId1)
+        const ex2 = prev.exercises.find(e => e.id === exId2)
+        if (!ex1 || !ex2) return prev
+        const groupId = ex1.supersetGroup || ex2.supersetGroup || `ss-${Date.now()}`
+        return {
+          ...prev,
+          exercises: prev.exercises.map(e =>
+            e.id === exId1 || e.id === exId2 ? { ...e, supersetGroup: groupId } : e
+          )
+        }
+      })
+    }
+
+    const unlinkSuperset = (exId1: string, exId2: string) => {
+      setEditingPlanData(prev => {
+        if (!prev) return null
+        const exercises = prev.exercises
+        const idx1 = exercises.findIndex(e => e.id === exId1)
+        const idx2 = exercises.findIndex(e => e.id === exId2)
+        const groupId = exercises[idx1]?.supersetGroup
+        if (!groupId) return prev
+        const groupIdxs = exercises.reduce<number[]>((acc, e, i) => {
+          if (e.supersetGroup === groupId) acc.push(i)
+          return acc
+        }, [])
+        const beforeIdxs = groupIdxs.filter(i => i <= idx1)
+        const afterIdxs = groupIdxs.filter(i => i >= idx2)
+        const newGroupBefore = beforeIdxs.length >= 2 ? groupId : undefined
+        const newGroupAfter = afterIdxs.length >= 2 ? `ss-${Date.now()}` : undefined
+        return {
+          ...prev,
+          exercises: exercises.map((e, i) => {
+            if (beforeIdxs.includes(i)) return { ...e, supersetGroup: newGroupBefore }
+            if (afterIdxs.includes(i)) return { ...e, supersetGroup: newGroupAfter }
+            return e
+          })
+        }
+      })
+    }
+
     if (isEditingPlan && editingPlanData) {
       return (
         <div className="pb-28 max-w-2xl mx-auto p-5 bg-gray-50 min-h-screen">
@@ -531,9 +574,16 @@ export default function FitTrack({ userId }: FitTrackProps) {
             />
           </div>
 
-          <div className="space-y-4">
-            {editingPlanData.exercises.map((ex) => (
-              <div key={ex.id} className="bg-white p-4 rounded-2xl shadow-sm border border-gray-200 relative">
+          <div className="space-y-0">
+            {editingPlanData.exercises.map((ex, exEditIdx) => {
+              const nextExEdit = editingPlanData.exercises[exEditIdx + 1]
+              const isLinkedToNextEdit = !!ex.supersetGroup && ex.supersetGroup === nextExEdit?.supersetGroup
+              const isInSupersetEdit = !!ex.supersetGroup
+              return (<React.Fragment key={ex.id}>
+              <div className={`bg-white p-4 rounded-2xl shadow-sm border relative mb-0 ${isInSupersetEdit ? 'border-purple-300' : 'border-gray-200'} ${isLinkedToNextEdit ? 'rounded-b-xl' : 'mb-4'}`}>
+                {isInSupersetEdit && (
+                  <div className="absolute top-3 left-4 text-[9px] bg-purple-100 text-purple-600 px-1.5 py-0.5 rounded font-black tracking-wider">SS</div>
+                )}
                 <button onClick={() => removeExercise(ex.id)} className="absolute top-4 right-4 text-gray-400 hover:text-red-500 transition-colors">
                   <Trash2 size={18} />
                 </button>
@@ -609,9 +659,32 @@ export default function FitTrack({ userId }: FitTrackProps) {
                   <input type="number" value={ex.interval} onChange={e => updateEditingExercise(ex.id, 'interval', Number(e.target.value))} className="w-1/3 bg-gray-50 border border-gray-200 rounded-lg p-2 text-sm font-bold outline-none text-center" />
                 </div>
               </div>
-            ))}
+              {nextExEdit && (
+                <div className="flex items-center justify-center py-1.5">
+                  {isLinkedToNextEdit ? (
+                    <div className="flex items-center gap-1.5 bg-purple-50 border border-purple-200 rounded-full px-3 py-1">
+                      <span className="text-[10px] font-bold text-purple-600">⚡ スーパーセット接続中</span>
+                      <button
+                        onClick={() => unlinkSuperset(ex.id, nextExEdit.id)}
+                        className="flex items-center gap-0.5 text-[10px] text-purple-400 hover:text-red-500 font-bold active:scale-95 transition-colors ml-1"
+                      >
+                        <Unlink2 size={11} /> 解除
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => linkSuperset(ex.id, nextExEdit.id)}
+                      className="flex items-center gap-1 text-[10px] text-gray-400 bg-white border border-dashed border-gray-300 px-3 py-1 rounded-full font-medium hover:border-purple-300 hover:text-purple-500 hover:bg-purple-50 active:scale-95 transition-colors"
+                    >
+                      <Link2 size={11} /> スーパーセット接続
+                    </button>
+                  )}
+                </div>
+              )}
+            </React.Fragment>)
+            })}
 
-            <button onClick={addExercise} className="w-full py-4 border-2 border-dashed border-gray-300 rounded-2xl text-gray-500 font-bold flex items-center justify-center gap-2 hover:bg-gray-100 hover:border-gray-400 transition-colors active:scale-95">
+            <button onClick={addExercise} className="w-full mt-2 py-4 border-2 border-dashed border-gray-300 rounded-2xl text-gray-500 font-bold flex items-center justify-center gap-2 hover:bg-gray-100 hover:border-gray-400 transition-colors active:scale-95">
               <Plus size={18} /> 新しい種目を追加
             </button>
           </div>
@@ -635,17 +708,33 @@ export default function FitTrack({ userId }: FitTrackProps) {
             <Edit3 size={16} /> 編集
           </button>
         </div>
-        <div className="space-y-4">
-          {currentPlan.exercises.map((ex, idx) => (
-            <div key={ex.id} className="bg-white p-5 rounded-3xl shadow-sm border border-gray-100">
-              <div className="font-bold text-gray-800 mb-3 flex gap-2 text-lg"><span className="text-blue-500 opacity-50">{idx + 1}.</span> {ex.name}</div>
-              <div className="flex flex-wrap gap-2">
-                <span className="bg-gray-100 text-gray-600 text-xs font-bold rounded-lg px-3 py-1.5">🎯 {ex.targetSets} Sets × {ex.type !== 'tabata' ? (ex.type === 'duration' ? `${ex.defaultReps}秒` : `${ex.defaultReps}回`) : 'HIIT'}</span>
-                <span className="bg-gray-100 text-gray-600 text-xs font-bold rounded-lg px-3 py-1.5 flex items-center gap-1"><Timer size={12} /> {ex.interval}s</span>
-                {ex.type === 'tabata' && <span className="bg-orange-50 text-orange-600 text-xs font-bold rounded-lg px-3 py-1.5 flex items-center gap-1"><Flame size={12} /> {ex.tabataWork}s / {ex.tabataRest}s × {ex.tabataCycles}回</span>}
-              </div>
-            </div>
-          ))}
+        <div className="space-y-0">
+          {currentPlan.exercises.map((ex, idx) => {
+            const nextEx = currentPlan.exercises[idx + 1]
+            const isInSuperset = !!ex.supersetGroup
+            const isLinkedToNext = isInSuperset && nextEx?.supersetGroup === ex.supersetGroup
+            return (
+              <React.Fragment key={ex.id}>
+                <div className={`bg-white p-5 rounded-3xl shadow-sm border ${isInSuperset ? 'border-purple-200' : 'border-gray-100'} ${isLinkedToNext ? 'mb-0 rounded-b-xl' : 'mb-4'}`}>
+                  <div className="font-bold text-gray-800 mb-3 flex gap-2 text-lg items-center">
+                    <span className="text-blue-500 opacity-50">{idx + 1}.</span>
+                    {ex.name}
+                    {isInSuperset && <span className="text-[9px] bg-purple-100 text-purple-600 px-1.5 py-0.5 rounded font-black tracking-wider">SS</span>}
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <span className="bg-gray-100 text-gray-600 text-xs font-bold rounded-lg px-3 py-1.5">🎯 {ex.targetSets} Sets × {ex.type !== 'tabata' ? (ex.type === 'duration' ? `${ex.defaultReps}秒` : `${ex.defaultReps}回`) : 'HIIT'}</span>
+                    <span className="bg-gray-100 text-gray-600 text-xs font-bold rounded-lg px-3 py-1.5 flex items-center gap-1"><Timer size={12} /> {ex.interval}s</span>
+                    {ex.type === 'tabata' && <span className="bg-orange-50 text-orange-600 text-xs font-bold rounded-lg px-3 py-1.5 flex items-center gap-1"><Flame size={12} /> {ex.tabataWork}s / {ex.tabataRest}s × {ex.tabataCycles}回</span>}
+                  </div>
+                </div>
+                {isLinkedToNext && (
+                  <div className="flex items-center justify-center h-7 bg-purple-50 border-x border-purple-200 -mt-px mb-0">
+                    <span className="text-[9px] font-bold text-purple-500">⚡ 続けて実施（スーパーセット）</span>
+                  </div>
+                )}
+              </React.Fragment>
+            )
+          })}
           {currentPlan.exercises.length === 0 && (
             <div className="text-center text-gray-400 py-10 bg-white rounded-3xl border border-dashed border-gray-200 shadow-sm">この日は休養日です</div>
           )}
@@ -783,8 +872,17 @@ export default function FitTrack({ userId }: FitTrackProps) {
       })
 
       if (isCompletedNow) {
-        const intervalSeconds = currentSession.exercises[exerciseIndex].interval
-        if (intervalSeconds > 0) startTimer('rest', intervalSeconds)
+        const ex = currentSession.exercises[exerciseIndex]
+        const supersetGroup = ex.supersetGroup
+        let shouldRest = true
+        if (supersetGroup) {
+          // Only start rest after the last exercise in the superset group
+          const lastGroupIdx = currentSession.exercises.reduce(
+            (last, e, i) => (e.supersetGroup === supersetGroup ? i : last), -1
+          )
+          shouldRest = exerciseIndex === lastGroupIdx
+        }
+        if (shouldRest && ex.interval > 0) startTimer('rest', ex.interval)
       }
     }
 
@@ -828,13 +926,27 @@ export default function FitTrack({ userId }: FitTrackProps) {
             <h1 className="text-2xl font-extrabold text-gray-800 mb-6">{targetPlan.category || '完全休養'}</h1>
 
             {targetPlan.exercises.length > 0 ? (
-              <div className="bg-gray-50 rounded-2xl p-4 mb-8 text-left space-y-2">
-                {targetPlan.exercises.map((ex, i) => (
-                  <div key={i} className="text-sm text-gray-700 flex items-center justify-between">
-                    <div className="flex items-center gap-2"><span className="w-1.5 h-1.5 bg-blue-500 rounded-full"></span>{ex.name}</div>
-                    <span className="text-gray-400 text-xs">{ex.targetSets}セット</span>
-                  </div>
-                ))}
+              <div className="bg-gray-50 rounded-2xl p-4 mb-8 text-left space-y-1">
+                {targetPlan.exercises.map((ex, i) => {
+                  const nextIdleEx = targetPlan.exercises[i + 1]
+                  const isInSupersetIdle = !!ex.supersetGroup
+                  const isLinkedToNextIdle = isInSupersetIdle && nextIdleEx?.supersetGroup === ex.supersetGroup
+                  return (
+                    <React.Fragment key={i}>
+                      <div className={`text-sm text-gray-700 flex items-center justify-between py-0.5 ${isInSupersetIdle ? 'border-l-2 border-purple-400 pl-2 -ml-2' : ''}`}>
+                        <div className="flex items-center gap-2">
+                          <span className={`w-1.5 h-1.5 rounded-full ${isInSupersetIdle ? 'bg-purple-400' : 'bg-blue-500'}`}></span>
+                          {ex.name}
+                          {isInSupersetIdle && <span className="text-[8px] bg-purple-100 text-purple-600 px-1 rounded font-black">SS</span>}
+                        </div>
+                        <span className="text-gray-400 text-xs">{ex.targetSets}セット</span>
+                      </div>
+                      {isLinkedToNextIdle && (
+                        <div className="text-[9px] text-purple-400 font-bold pl-3 -my-0.5">↕ 続けて実施</div>
+                      )}
+                    </React.Fragment>
+                  )
+                })}
               </div>
             ) : <div className="mb-8 text-gray-400">休養日として設定されています。</div>}
 
@@ -870,13 +982,19 @@ export default function FitTrack({ userId }: FitTrackProps) {
           <button onClick={saveWorkoutSession} className="bg-white text-blue-600 px-3 py-2 rounded-xl font-bold shadow-sm active:scale-95 transition-transform text-sm">完了して保存</button>
         </div>
 
-        {currentSession.exercises.map((ex, exIdx) => (
-          <div key={exIdx} className="mb-6 bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+        {currentSession.exercises.map((ex, exIdx) => {
+          const nextSessionEx = currentSession.exercises[exIdx + 1]
+          const isSessionInSuperset = !!ex.supersetGroup
+          const isSessionLinkedToNext = isSessionInSuperset && nextSessionEx?.supersetGroup === ex.supersetGroup
+          return (
+          <React.Fragment key={exIdx}>
+          <div className={`bg-white rounded-2xl shadow-sm overflow-hidden ${isSessionInSuperset ? 'border-2 border-purple-200' : 'border border-gray-100'} ${isSessionLinkedToNext ? 'mb-0 rounded-b-lg' : 'mb-6'}`}>
             <div className="p-3 bg-gray-50 border-b border-gray-100 flex justify-between items-center flex-wrap gap-2">
               <h3 className="font-bold text-[15px] text-gray-800 flex items-center gap-2 leading-tight">
                 <span className="bg-blue-100 text-blue-600 w-6 h-6 flex justify-center items-center rounded-full text-xs flex-shrink-0">{exIdx + 1}</span>
                 {ex.name}
                 {ex.inherited && <span className="text-[9px] bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded font-black tracking-wider ml-1">前回引継</span>}
+                {isSessionInSuperset && <span className="text-[9px] bg-purple-100 text-purple-600 px-1.5 py-0.5 rounded font-black tracking-wider ml-1">SS</span>}
               </h3>
               <div className="flex items-center gap-2 flex-shrink-0 ml-auto">
                 <div className="flex items-center gap-1 bg-gray-100 border border-gray-200 rounded-md p-0.5 shadow-sm">
@@ -953,7 +1071,13 @@ export default function FitTrack({ userId }: FitTrackProps) {
               ))}
             </div>
           </div>
-        ))}
+          {isSessionLinkedToNext && (
+            <div className="flex items-center justify-center h-8 bg-purple-50 border-x-2 border-purple-200 -mt-px">
+              <span className="text-[9px] font-bold text-purple-500">⚡ 続けて実施（スーパーセット）</span>
+            </div>
+          )}
+          </React.Fragment>)
+        })}
 
         {showCancelConfirm && (
           <div className="fixed inset-0 bg-gray-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-5">

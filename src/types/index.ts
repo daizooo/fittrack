@@ -35,6 +35,7 @@ export interface Exercise {
   tabataWork?: number
   tabataRest?: number
   tabataCycles?: number
+  supersetGroup?: string          // exercises sharing the same non-empty value are performed as a superset
 }
 
 export interface WorkoutPlan {
