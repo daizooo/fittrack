@@ -29,16 +29,24 @@ const getAudioCtx = (): AudioContext => {
 const playBeep = (freq = 440, duration = 0.1, vol = 0.1) => {
   try {
     const ctx = getAudioCtx()
-    const osc = ctx.createOscillator()
-    const gain = ctx.createGain()
-    osc.type = 'sine'
-    osc.frequency.setValueAtTime(freq, ctx.currentTime)
-    gain.gain.setValueAtTime(vol, ctx.currentTime)
-    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration)
-    osc.connect(gain)
-    gain.connect(ctx.destination)
-    osc.start(ctx.currentTime)
-    osc.stop(ctx.currentTime + duration)
+    const schedule = () => {
+      const osc = ctx.createOscillator()
+      const gain = ctx.createGain()
+      osc.type = 'sine'
+      osc.frequency.setValueAtTime(freq, ctx.currentTime)
+      gain.gain.setValueAtTime(vol, ctx.currentTime)
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration)
+      osc.connect(gain)
+      gain.connect(ctx.destination)
+      osc.start(ctx.currentTime)
+      osc.stop(ctx.currentTime + duration)
+    }
+    // resume() is async; wait for the context to be running before scheduling
+    if (ctx.state !== 'running') {
+      ctx.resume().then(schedule).catch(e => console.error('Audio resume failed:', e))
+    } else {
+      schedule()
+    }
   } catch (e) {
     console.error('Audio play failed:', e)
   }
@@ -159,6 +167,35 @@ const EquipmentSelector = ({ value, options, onChange, label }: {
         <option key={i} value={opt.weight}>{opt.label}</option>
       ))}
     </select>
+  </div>
+)
+
+// ─── Bottom Navigation (defined outside FitTrack to prevent remount on timer ticks) ──
+
+interface BottomNavProps {
+  activeTab: string
+  setActiveTab: (tab: string) => void
+}
+
+const BottomNav = ({ activeTab, setActiveTab }: BottomNavProps) => (
+  <div className="fixed bottom-0 left-0 w-full bg-white/90 backdrop-blur-xl border-t border-gray-200 pb-safe z-40 shadow-[0_-10px_40px_rgba(0,0,0,0.05)]">
+    <div className="flex justify-around items-center h-20 max-w-md mx-auto px-2">
+      <button onClick={() => setActiveTab('plan')} className={`flex flex-col items-center justify-center w-1/5 h-full transition-all ${activeTab === 'plan' ? 'text-blue-600 -translate-y-1' : 'text-gray-400'}`}>
+        <CalendarDays size={24} strokeWidth={activeTab === 'plan' ? 2.5 : 2} /><span className="text-[10px] mt-1 font-bold">プラン</span>
+      </button>
+      <button onClick={() => setActiveTab('record')} className={`flex flex-col items-center justify-center w-1/5 h-full transition-all ${activeTab === 'record' ? 'text-blue-600 -translate-y-1' : 'text-gray-400'}`}>
+        <Dumbbell size={24} strokeWidth={activeTab === 'record' ? 2.5 : 2} /><span className="text-[10px] mt-1 font-bold">ワークアウト</span>
+      </button>
+      <button onClick={() => setActiveTab('history')} className={`flex flex-col items-center justify-center w-1/5 h-full transition-all ${activeTab === 'history' ? 'text-blue-600 -translate-y-1' : 'text-gray-400'}`}>
+        <History size={24} strokeWidth={activeTab === 'history' ? 2.5 : 2} /><span className="text-[10px] mt-1 font-bold">履歴</span>
+      </button>
+      <button onClick={() => setActiveTab('analytics')} className={`flex flex-col items-center justify-center w-1/5 h-full transition-all ${activeTab === 'analytics' ? 'text-blue-600 -translate-y-1' : 'text-gray-400'}`}>
+        <BarChart3 size={24} strokeWidth={activeTab === 'analytics' ? 2.5 : 2} /><span className="text-[10px] mt-1 font-bold">分析</span>
+      </button>
+      <button onClick={() => setActiveTab('profile')} className={`flex flex-col items-center justify-center w-1/5 h-full transition-all ${activeTab === 'profile' ? 'text-blue-600 -translate-y-1' : 'text-gray-400'}`}>
+        <User size={24} strokeWidth={activeTab === 'profile' ? 2.5 : 2} /><span className="text-[10px] mt-1 font-bold">プロフィール</span>
+      </button>
+    </div>
   </div>
 )
 
@@ -1102,29 +1139,6 @@ export default function FitTrack({ userId }: FitTrackProps) {
           </div>
         )}
 
-        {activeTimer.isActive && (
-          <div className={`fixed bottom-24 left-1/2 -translate-x-1/2 px-6 py-3 rounded-full shadow-2xl flex items-center gap-4 z-50 animate-in slide-in-from-bottom-5
-            ${activeTimer.type === 'work' || activeTimer.type === 'tabata_work' ? 'bg-orange-600 text-white' :
-              activeTimer.type === 'tabata_rest' ? 'bg-blue-600 text-white' : 'bg-gray-900 text-white'}`}>
-            {activeTimer.type === 'work' || activeTimer.type === 'tabata_work'
-              ? <Play size={20} className={`${activeTimer.remaining <= 5 ? 'animate-bounce' : 'animate-pulse'}`} fill="currentColor" />
-              : <Timer size={20} className={`text-blue-400 ${activeTimer.remaining <= 5 ? 'animate-bounce text-red-400' : 'animate-pulse'}`} />}
-            <span className={`font-mono text-3xl font-bold w-16 text-center tracking-tighter ${(activeTimer.type === 'rest' || activeTimer.type === 'tabata_rest') && activeTimer.remaining <= 5 ? 'text-red-400' : ''}`}>{activeTimer.remaining}</span>
-            <div className="flex flex-col items-center justify-center min-w-[3rem]">
-              <span className="text-[10px] font-black tracking-widest whitespace-nowrap opacity-80">
-                {activeTimer.type === 'work' ? 'WORK' : activeTimer.type === 'rest' ? 'REST' : activeTimer.type === 'tabata_work' ? 'WORK' : 'REST'}
-              </span>
-              {(activeTimer.type === 'tabata_work' || activeTimer.type === 'tabata_rest') && (
-                <span className="text-[9px] font-bold mt-0.5 bg-white/20 px-1.5 py-0.5 rounded text-white tracking-widest">
-                  RND {activeTimer.currentCycle}/{activeTimer.tabataCycles}
-                </span>
-              )}
-            </div>
-            <button onClick={() => setActiveTimer(defaultTimerState)} className="p-1.5 rounded-full hover:bg-black/20 active:scale-95 transition-transform">
-              <X size={16} />
-            </button>
-          </div>
-        )}
       </div>
     )
   }
@@ -1319,30 +1333,6 @@ export default function FitTrack({ userId }: FitTrackProps) {
     </div>
   )
 
-  // ── Navigation ──────────────────────────────────────────────────────────────
-
-  const Navigation = () => (
-    <div className="fixed bottom-0 left-0 w-full bg-white/90 backdrop-blur-xl border-t border-gray-200 pb-safe z-40 shadow-[0_-10px_40px_rgba(0,0,0,0.05)]">
-      <div className="flex justify-around items-center h-20 max-w-md mx-auto px-2">
-        <button onClick={() => setActiveTab('plan')} className={`flex flex-col items-center justify-center w-1/5 h-full transition-all ${activeTab === 'plan' ? 'text-blue-600 -translate-y-1' : 'text-gray-400'}`}>
-          <CalendarDays size={24} strokeWidth={activeTab === 'plan' ? 2.5 : 2} /><span className="text-[10px] mt-1 font-bold">プラン</span>
-        </button>
-        <button onClick={() => setActiveTab('record')} className={`flex flex-col items-center justify-center w-1/5 h-full transition-all ${activeTab === 'record' ? 'text-blue-600 -translate-y-1' : 'text-gray-400'}`}>
-          <Dumbbell size={24} strokeWidth={activeTab === 'record' ? 2.5 : 2} /><span className="text-[10px] mt-1 font-bold">ワークアウト</span>
-        </button>
-        <button onClick={() => setActiveTab('history')} className={`flex flex-col items-center justify-center w-1/5 h-full transition-all ${activeTab === 'history' ? 'text-blue-600 -translate-y-1' : 'text-gray-400'}`}>
-          <History size={24} strokeWidth={activeTab === 'history' ? 2.5 : 2} /><span className="text-[10px] mt-1 font-bold">履歴</span>
-        </button>
-        <button onClick={() => setActiveTab('analytics')} className={`flex flex-col items-center justify-center w-1/5 h-full transition-all ${activeTab === 'analytics' ? 'text-blue-600 -translate-y-1' : 'text-gray-400'}`}>
-          <BarChart3 size={24} strokeWidth={activeTab === 'analytics' ? 2.5 : 2} /><span className="text-[10px] mt-1 font-bold">分析</span>
-        </button>
-        <button onClick={() => setActiveTab('profile')} className={`flex flex-col items-center justify-center w-1/5 h-full transition-all ${activeTab === 'profile' ? 'text-blue-600 -translate-y-1' : 'text-gray-400'}`}>
-          <User size={24} strokeWidth={activeTab === 'profile' ? 2.5 : 2} /><span className="text-[10px] mt-1 font-bold">プロフィール</span>
-        </button>
-      </div>
-    </div>
-  )
-
   // ── Loading state ───────────────────────────────────────────────────────────
 
   if (dataLoading) {
@@ -1396,7 +1386,34 @@ export default function FitTrack({ userId }: FitTrackProps) {
         )}
       </main>
 
-      <Navigation />
+      <BottomNav activeTab={activeTab} setActiveTab={setActiveTab} />
+
+      {activeTimer.isActive && (
+        <div
+          className={`fixed left-1/2 -translate-x-1/2 px-6 py-3 rounded-full shadow-2xl flex items-center gap-4 z-50 animate-in slide-in-from-bottom-5
+            ${activeTimer.type === 'work' || activeTimer.type === 'tabata_work' ? 'bg-orange-600 text-white' :
+              activeTimer.type === 'tabata_rest' ? 'bg-blue-600 text-white' : 'bg-gray-900 text-white'}`}
+          style={{ bottom: 'calc(5rem + env(safe-area-inset-bottom, 0px) + 0.5rem)' }}
+        >
+          {activeTimer.type === 'work' || activeTimer.type === 'tabata_work'
+            ? <Play size={20} className={`${activeTimer.remaining <= 5 ? 'animate-bounce' : 'animate-pulse'}`} fill="currentColor" />
+            : <Timer size={20} className={`text-blue-400 ${activeTimer.remaining <= 5 ? 'animate-bounce text-red-400' : 'animate-pulse'}`} />}
+          <span className={`font-mono text-3xl font-bold w-16 text-center tracking-tighter ${(activeTimer.type === 'rest' || activeTimer.type === 'tabata_rest') && activeTimer.remaining <= 5 ? 'text-red-400' : ''}`}>{activeTimer.remaining}</span>
+          <div className="flex flex-col items-center justify-center min-w-[3rem]">
+            <span className="text-[10px] font-black tracking-widest whitespace-nowrap opacity-80">
+              {activeTimer.type === 'work' ? 'WORK' : activeTimer.type === 'rest' ? 'REST' : activeTimer.type === 'tabata_work' ? 'WORK' : 'REST'}
+            </span>
+            {(activeTimer.type === 'tabata_work' || activeTimer.type === 'tabata_rest') && (
+              <span className="text-[9px] font-bold mt-0.5 bg-white/20 px-1.5 py-0.5 rounded text-white tracking-widest">
+                RND {activeTimer.currentCycle}/{activeTimer.tabataCycles}
+              </span>
+            )}
+          </div>
+          <button onClick={() => setActiveTimer(defaultTimerState)} className="p-1.5 rounded-full hover:bg-black/20 active:scale-95 transition-transform">
+            <X size={16} />
+          </button>
+        </div>
+      )}
 
       {selectedRecordDetail && (
         <div className="fixed inset-0 bg-gray-900/40 backdrop-blur-sm z-[60] flex items-center justify-center p-5">
