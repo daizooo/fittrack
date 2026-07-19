@@ -446,7 +446,7 @@ export default function FitTrack({ userId }: FitTrackProps) {
       }, 100)
     }
     return () => clearInterval(timerId)
-  }, [activeTimer.isActive]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [activeTimer.isActive, activeTimer.endTime]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Filtered records ────────────────────────────────────────────────────────
 
