@@ -174,6 +174,38 @@ describe('FitTrack – SS セット完了・重量操作', () => {
       { timeout: 3000 },
     )
   })
+
+  it('左（1セット目）完了だけではレストが始まらない', async () => {
+    await startSundaySession()
+
+    // 最初のチェックボタン = ブルガリアンSS（左）の1セット目
+    const checkButtons = document.querySelectorAll('button[class*="w-12"]')
+    await act(async () => {
+      fireEvent.click(checkButtons[0])
+    })
+
+    // 左右で1セット扱いのため、左だけではレストタイマーが起動しない
+    await new Promise(resolve => setTimeout(resolve, 50))
+    expect(screen.queryByText('REST')).not.toBeInTheDocument()
+  })
+
+  it('左右とも1セット目を完了するとレストが始まる', async () => {
+    await startSundaySession()
+
+    // ブルガリアンSS（左）の4セット分、続けて（右）の4セット分のチェックボタンが並ぶ
+    await act(async () => {
+      fireEvent.click(document.querySelectorAll('button[class*="w-12"]')[0]) // 左 1セット目
+    })
+    await act(async () => {
+      // 左の完了で行が再レンダリングされるため、都度DOMを再取得する
+      fireEvent.click(document.querySelectorAll('button[class*="w-12"]')[4]) // 右 1セット目（左が4セット分なのでindex4から）
+    })
+
+    await waitFor(
+      () => expect(screen.getByText('REST')).toBeInTheDocument(),
+      { timeout: 3000 },
+    )
+  })
 })
 
 describe('FitTrack – SS セッション保存', () => {
