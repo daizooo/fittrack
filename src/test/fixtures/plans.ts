@@ -45,8 +45,8 @@ export const initialWorkoutPlans: WorkoutPlan[] = [
   },
   {
     day: '日', category: '下半身＋VO₂MAX＋体幹', exercises: [
-      { id: 'sun-1', name: 'ブルガリアンSS（左）', type: 'normal', targetSets: 4, defaultReps: 8, defaultWeight: 5.25, interval: 180, equipmentType: 'vest' },
-      { id: 'sun-2', name: 'ブルガリアンSS（右）', type: 'normal', targetSets: 4, defaultReps: 8, defaultWeight: 5.25, interval: 180, equipmentType: 'vest' },
+      { id: 'sun-1', name: 'ブルガリアンSS（左）', type: 'normal', targetSets: 4, defaultReps: 8, defaultWeight: 5.25, interval: 180, equipmentType: 'vest', supersetGroup: 'sun-bss-lr' },
+      { id: 'sun-2', name: 'ブルガリアンSS（右）', type: 'normal', targetSets: 4, defaultReps: 8, defaultWeight: 5.25, interval: 180, equipmentType: 'vest', supersetGroup: 'sun-bss-lr' },
       { id: 'sun-3', name: 'チューブ・ルーマニアンDL', type: 'normal', targetSets: 4, defaultReps: 15, defaultWeight: 66.5, interval: 120, equipmentType: 'tube' },
       { id: 'sun-4', name: 'HIIT（バーピー）', type: 'tabata', targetSets: 2, defaultReps: 0, defaultWeight: 5.25, interval: 120, tabataWork: 20, tabataRest: 10, tabataCycles: 8, equipmentType: 'vest' },
       { id: 'sun-5', name: 'ウエイトプランク', type: 'duration', targetSets: 4, defaultReps: 45, defaultWeight: 5.25, interval: 60, equipmentType: 'vest' },
