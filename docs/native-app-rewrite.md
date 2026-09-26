@@ -84,6 +84,8 @@ sukusuku同様の本格的なローカルDB＋同期の仕組みまでは、現�
 | --- | --- | --- |
 | 0. 土台 | `mobile/` にExpoを置き、Supabaseへログインできるところまで。ロジック層（定義データ・型・equipmentUtils）を移植 | 実機で自分の記録が1件読める |
 | 1. Tabataタイマー | ワークアウト記録画面＋前面サービス（Kotlin）＋鳴らし分け＋簡易オフライン対応（§4） | **タイマーだけネイティブで正確に回る。**当初の目的はここで達成される |
+| 1a. （進捗）ワークアウト記録画面＋タイマーUI | JS側で実装済み（`mobile/src/components/WorkoutRecordScreen.tsx`, `mobile/src/hooks/useWorkoutTimer.ts`）。setInterval+Date.now()方式のためフォアグラウンドでのみ正確 | — |
+| 1b. （設計済み・未実装）前面サービス | Kotlin側の詳細設計は`docs/tabata-foreground-service.md`を参照。Android SDKが無い環境のため実装はまだ | — |
 | 2. 残りの画面 | プラン／履歴／分析／プロフィールの各タブ | Android上でPWA相当の全機能が揃う |
 | 3. 通知 | 現状FitTrackに通知機能は無い。将来トレーニングリマインダー等を足すなら検討 | — |
 | 4. 畳む | PWAのデプロイを止め、`src/` を削除 | Android移行が安定し、退路が不要と確認できてから |
