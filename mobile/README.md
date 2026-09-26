@@ -8,8 +8,9 @@
 cd mobile
 npm install
 cp .env.local.example .env.local
-# .env.local に既存Supabaseプロジェクトの URL と anon key を入れる
-# （Web版 ../.env と同じプロジェクト。フェーズ0ではSupabaseは新規に作らない）
+# .env.local に Supabase プロジェクトの URL と anon key を入れる
+# （Web版 ../.env と同じプロジェクト。どのプロジェクトかは下記「Supabaseプロジェクトの
+#   移行について」を参照）
 ```
 
 Google OAuthでネイティブからログインするには、Supabase Dashboard の
@@ -39,3 +40,34 @@ Windows/Mac環境で行う（sukusukuの `docs/mobile-local-build.md` と同じ�
 
 - Supabase（Google OAuth）でのログイン／ログアウトのみ実装済み
 - ワークアウト記録・タイマー等の画面はまだ無い（フェーズ1で着手）
+
+## Supabaseプロジェクトの移行について（2026-09-26）
+
+当初の設計（`docs/native-app-rewrite.md`）ではSupabaseは既存プロジェクトをそのまま
+使う方針だったが、フェーズ0の作業中に以下の理由で別プロジェクトへ移行した。
+
+- Supabase Freeプランは「同一アカウントがOwner/Adminとして参加する組織を横断して、
+  アクティブなプロジェクトは2つまで」という制限がある（pause中のプロジェクトは
+  カウントされない）
+- 既存アカウント（daizoooo、GitHub連携）は`denken3`・`sukusuku`の2プロジェクトで
+  既に枠が埋まっており、`fittrack`が7日間の低活動で自動pauseされていた
+- 別メールアドレスで新規Supabaseアカウントを作成して移行した。Google OAuthで
+  ログインすると同じGitHubアカウントに戻ってしまうため、**メール＋パスワードでの
+  新規登録**を使う必要がある
+- 旧`fittrack`プロジェクト（daizoooo組織側）にはワークアウト記録がほとんど
+  入っていなかったため、Project Transferではなく「新規プロジェクトを作り、
+  Web版・mobile版の接続先を切り替え、マイグレーションを再適用する」形で移行し、
+  旧プロジェクトは削除済み
+
+移行に伴い、以下も新プロジェクト向けに設定し直している。
+
+- `supabase/migrations/*.sql` の再適用（SQL Editorで手動実行）
+- Google OAuth（Google Cloud Console側のクライアントに新プロジェクトのコールバック
+  URLを追加し、Supabase側にClient ID/Secretを再登録）
+- Authentication > URL Configuration の Redirect URLs（`fittrack://**`含む）
+- Vercel側の環境変数（`VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY`）と
+  本番デプロイの再ビルド（環境変数はビルド時に静的に埋め込まれるため、
+  「Promote to Production」のような再ビルドを伴わない昇格では反映されない点に注意）
+
+現在Web版・mobile版とも同じ新プロジェクトを参照している。今後Supabase側の設定
+（Auth Provider、Redirect URLsなど）を変更する際は、このプロジェクトに対して行う。
