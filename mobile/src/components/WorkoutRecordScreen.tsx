@@ -1,125 +1,27 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useState } from 'react'
 import {
   ActivityIndicator, Alert, ScrollView, StyleSheet, Text,
-  TextInput, TouchableOpacity, View
+  TouchableOpacity, View
 } from 'react-native'
-import { CheckCircle, ChevronLeft, Minus, Moon, Play, Plus, Timer } from 'lucide-react-native'
-import { fetchOrSeedPlans } from '../lib/plans'
-import { fetchOrSeedEquipment } from '../lib/equipment'
-import { fetchRecords, saveRestRecord, saveWorkoutRecord } from '../lib/records'
-import { generateEquipmentOptions } from '../lib/equipmentUtils'
-import { daysOfWeek, displayDaysOfWeek } from '../lib/workoutPlans'
+import { CheckCircle, ChevronLeft, Moon, Play, Timer } from 'lucide-react-native'
+import { useWorkoutData } from '../context/WorkoutDataContext'
+import { daysOfWeek } from '../lib/workoutPlans'
 import { useWorkoutTimer } from '../hooks/useWorkoutTimer'
+import DayTabs from './shared/DayTabs'
+import { CyclePicker, NumberStepper } from './shared/pickers'
 import TimerBar from './TimerBar'
-import type {
-  EquipmentItem, EquipmentOption, Exercise, SessionData,
-  SessionExercise, SetData, TimerState, WorkoutPlan, WorkoutRecord
-} from '../types'
+import type { Exercise, SessionData, SessionExercise, SetData, TimerState } from '../types'
 
-// ─── Small pickers (defined outside the screen so they don't remount on timer ticks) ──
-
-const NumberStepper = ({ label, value, onChange, min = 0, max = 999, step = 1 }: {
-  label: string; value: number; onChange: (v: number) => void
-  min?: number; max?: number; step?: number
-}) => (
-  <View style={styles.pickerCol}>
-    <Text style={styles.pickerLabel}>{label}</Text>
-    <View style={styles.pickerBox}>
-      <TouchableOpacity onPress={() => onChange(Math.max(min, value - step))} style={styles.pickerArrow} hitSlop={6}>
-        <Minus size={14} color="#6b7280" />
-      </TouchableOpacity>
-      <TextInput
-        style={styles.pickerInput}
-        keyboardType="number-pad"
-        value={String(value)}
-        onChangeText={(t) => {
-          if (t === '') return onChange(min)
-          const n = Number(t)
-          if (!Number.isNaN(n)) onChange(n)
-        }}
-        onBlur={() => onChange(Math.max(min, Math.min(max, value)))}
-      />
-      <TouchableOpacity onPress={() => onChange(Math.min(max, value + step))} style={styles.pickerArrow} hitSlop={6}>
-        <Plus size={14} color="#6b7280" />
-      </TouchableOpacity>
-    </View>
-  </View>
-)
-
-const EquipmentPicker = ({ label, value, options, onChange }: {
-  label: string; value: number; options: EquipmentOption[]; onChange: (v: number) => void
-}) => {
-  const idx = Math.max(0, options.findIndex(o => o.weight === value))
-  const cycle = (dir: number) => {
-    const nextIdx = (idx + dir + options.length) % options.length
-    onChange(options[nextIdx].weight)
-  }
-  return (
-    <View style={styles.pickerCol}>
-      <Text style={styles.pickerLabel}>{label}</Text>
-      <View style={styles.pickerBox}>
-        <TouchableOpacity onPress={() => cycle(-1)} style={styles.pickerArrow} hitSlop={6}>
-          <Minus size={14} color="#6b7280" />
-        </TouchableOpacity>
-        <Text style={styles.pickerValue} numberOfLines={1}>{options[idx]?.label ?? 'ー'}</Text>
-        <TouchableOpacity onPress={() => cycle(1)} style={styles.pickerArrow} hitSlop={6}>
-          <Plus size={14} color="#6b7280" />
-        </TouchableOpacity>
-      </View>
-    </View>
-  )
-}
-
-interface WorkoutRecordScreenProps { userId: string }
-
-export default function WorkoutRecordScreen({ userId }: WorkoutRecordScreenProps) {
+export default function WorkoutRecordScreen() {
   const todayDayStr = daysOfWeek[new Date().getDay()]
   const todayDateStr = new Date().toLocaleDateString('ja-JP', { month: 'numeric', day: 'numeric' })
 
-  const [plans, setPlans] = useState<WorkoutPlan[]>([])
-  const [equipment, setEquipment] = useState<EquipmentItem[]>([])
-  const [records, setRecords] = useState<WorkoutRecord[]>([])
-  const [dataLoading, setDataLoading] = useState(true)
-  const [loadError, setLoadError] = useState<string | null>(null)
+  const { plans, records, equipmentOptionsMap, dataLoading, loadError, recordWorkout, recordRest } = useWorkoutData()
 
   const [selectedRecordDay, setSelectedRecordDay] = useState(todayDayStr)
   const [sessionStatus, setSessionStatus] = useState<'idle' | 'active'>('idle')
   const [currentSession, setCurrentSession] = useState<SessionData | null>(null)
   const [showCancelConfirm, setShowCancelConfirm] = useState(false)
-
-  useEffect(() => {
-    let cancelled = false
-    const load = async () => {
-      setDataLoading(true)
-      setLoadError(null)
-      try {
-        const [plansData, equipmentData, recordsData] = await Promise.all([
-          fetchOrSeedPlans(userId),
-          fetchOrSeedEquipment(userId),
-          fetchRecords(userId)
-        ])
-        if (cancelled) return
-        setPlans(plansData)
-        setEquipment(equipmentData)
-        setRecords(recordsData)
-      } catch (err) {
-        console.error('Failed to load data:', err)
-        if (!cancelled) setLoadError(err instanceof Error ? err.message : String(err))
-      } finally {
-        if (!cancelled) setDataLoading(false)
-      }
-    }
-    load()
-    return () => { cancelled = true }
-  }, [userId])
-
-  const equipmentOptionsMap = useMemo(() => {
-    const map = new Map<string, EquipmentOption[]>()
-    equipment.filter(e => e.category === 'load').forEach(item => {
-      map.set(item.id, generateEquipmentOptions(item))
-    })
-    return map
-  }, [equipment])
 
   const handleWorkTimerComplete = (timerState: TimerState) => {
     setCurrentSession(prev => {
@@ -185,8 +87,7 @@ export default function WorkoutRecordScreen({ userId }: WorkoutRecordScreenProps
 
   const skipSession = async () => {
     try {
-      const record = await saveRestRecord(userId, todayDayStr)
-      setRecords(prev => [record, ...prev])
+      await recordRest(todayDayStr)
       setSessionStatus('idle')
     } catch (err) {
       console.error('Failed to save rest record:', err)
@@ -238,8 +139,7 @@ export default function WorkoutRecordScreen({ userId }: WorkoutRecordScreenProps
   const saveWorkoutSession = async () => {
     if (!currentSession) return
     try {
-      const record = await saveWorkoutRecord(userId, currentSession)
-      setRecords(prev => [record, ...prev])
+      await recordWorkout(currentSession)
       setSessionStatus('idle')
       setCurrentSession(null)
       cancelTimer()
@@ -275,16 +175,8 @@ export default function WorkoutRecordScreen({ userId }: WorkoutRecordScreenProps
             <Text style={styles.todayDate}>{todayDateStr} <Text style={styles.todayDay}>({todayDayStr})</Text></Text>
           </View>
 
-          <View style={styles.dayTabs}>
-            {displayDaysOfWeek.map(day => (
-              <TouchableOpacity
-                key={day}
-                onPress={() => setSelectedRecordDay(day)}
-                style={[styles.dayTab, selectedRecordDay === day && styles.dayTabActive]}
-              >
-                <Text style={[styles.dayTabText, selectedRecordDay === day && styles.dayTabTextActive]}>{day}</Text>
-              </TouchableOpacity>
-            ))}
+          <View style={styles.dayTabsWrap}>
+            <DayTabs selectedDay={selectedRecordDay} onSelect={setSelectedRecordDay} />
           </View>
 
           <View style={styles.planCard}>
@@ -381,10 +273,10 @@ export default function WorkoutRecordScreen({ userId }: WorkoutRecordScreenProps
                   <>
                     <Text style={styles.setNumber}>{set.setNumber}</Text>
                     <View style={styles.setInputs}>
-                      <EquipmentPicker
+                      <CyclePicker
                         label="負荷/機材"
                         value={set.weight}
-                        options={ex.options}
+                        options={ex.options.map(o => ({ label: o.label, value: o.weight }))}
                         onChange={(v) => handleSetUpdate(exIdx, setIdx, 'weight', v)}
                       />
                       <NumberStepper
@@ -458,11 +350,7 @@ const styles = StyleSheet.create({
   todayDate: { fontSize: 28, fontWeight: '900', color: '#1f2937' },
   todayDay: { fontSize: 18, color: '#9ca3af', fontWeight: '700' },
 
-  dayTabs: { flexDirection: 'row', backgroundColor: '#fff', borderRadius: 16, padding: 6, marginBottom: 20, borderWidth: 1, borderColor: '#f3f4f6' },
-  dayTab: { flex: 1, paddingVertical: 8, borderRadius: 12, alignItems: 'center' },
-  dayTabActive: { backgroundColor: '#111827' },
-  dayTabText: { fontSize: 12, fontWeight: '700', color: '#9ca3af' },
-  dayTabTextActive: { color: '#fff' },
+  dayTabsWrap: { marginBottom: 20 },
 
   planCard: { backgroundColor: '#fff', borderRadius: 24, padding: 24, borderWidth: 1, borderColor: '#f3f4f6', alignItems: 'center' },
   planCardLabel: { color: '#6b7280', fontWeight: '500', marginBottom: 4 },
@@ -510,13 +398,6 @@ const styles = StyleSheet.create({
   playButtonDisabled: { backgroundColor: '#e5e7eb' },
   completeButton: { width: 48, height: 40, borderRadius: 12, backgroundColor: '#f3f4f6', alignItems: 'center', justifyContent: 'center' },
   completeButtonDone: { backgroundColor: '#22c55e' },
-
-  pickerCol: { alignItems: 'center' },
-  pickerLabel: { fontSize: 9, color: '#9ca3af', marginBottom: 4 },
-  pickerBox: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#f3f4f6', borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 10, height: 36, minWidth: 96, paddingHorizontal: 4 },
-  pickerArrow: { width: 24, height: '100%', alignItems: 'center', justifyContent: 'center' },
-  pickerValue: { flex: 1, textAlign: 'center', fontSize: 11, fontWeight: '700', color: '#1f2937' },
-  pickerInput: { flex: 1, textAlign: 'center', fontSize: 13, fontWeight: '700', color: '#1f2937', padding: 0 },
 
   modalOverlay: { ...StyleSheet.absoluteFill, backgroundColor: 'rgba(17,24,39,0.6)', alignItems: 'center', justifyContent: 'center', padding: 20 },
   modalCard: { width: '100%', maxWidth: 360, backgroundColor: '#fff', borderRadius: 24, padding: 24 },

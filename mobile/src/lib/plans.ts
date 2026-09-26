@@ -31,3 +31,13 @@ export async function fetchOrSeedPlans(userId: string): Promise<WorkoutPlan[]> {
   if (insertError) throw insertError
   return initialWorkoutPlans
 }
+
+export async function upsertPlan(userId: string, plan: WorkoutPlan): Promise<void> {
+  const { error } = await supabase.from('plans').upsert({
+    user_id: userId,
+    day: plan.day,
+    category: plan.category,
+    exercises: plan.exercises
+  }, { onConflict: 'user_id,day' })
+  if (error) throw error
+}

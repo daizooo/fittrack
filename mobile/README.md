@@ -1,7 +1,8 @@
 # mobile/（FITTRACK Androidネイティブ版）
 
-設計の背景は `../docs/native-app-rewrite.md` を参照。フェーズ0（土台づくり）は完了し、
-現在はフェーズ1（Tabataタイマー）に着手中。
+設計の背景は `../docs/native-app-rewrite.md` を参照。フェーズ0（土台づくり）・
+フェーズ1のJS側実装（ワークアウト記録画面＋タイマーUI）は完了し、
+現在はフェーズ2（プラン／履歴／分析／プロフィールの各タブ）に着手中。
 
 ## セットアップ
 
@@ -32,34 +33,43 @@ Windows/Mac環境で行う（sukusukuの `docs/mobile-local-build.md` と同じ�
 
 ## 構成
 
-- `src/app/` — 画面（Expo Router。ファイル1つ＝1画面）
+- `src/app/` — 画面（Expo Router。ファイル1つ＝1画面）。`login.tsx`が未ログイン時、
+  `(app)/`グループがログイン後のタブ画面（`_layout.tsx`がタブ定義、`index.tsx`が
+  ワークアウトタブ、`plan.tsx`がプランタブ）。ルートの`_layout.tsx`が
+  `Stack.Protected`でセッション有無により両者を出し分ける
+- `src/context/` — `SessionContext.tsx`（supabaseセッション）、
+  `WorkoutDataContext.tsx`（plans/equipment/recordsを画面間で共有し、
+  `savePlan`/`recordWorkout`/`recordRest`で更新する）
 - `src/components/` — `WorkoutRecordScreen.tsx`（ワークアウト記録画面本体）、
-  `TimerBar.tsx`（画面下部のフローティングタイマー表示）
+  `PlanScreen.tsx`（プラン閲覧・編集画面）、`TimerBar.tsx`（画面下部の
+  フローティングタイマー表示）、`shared/`（`DayTabs`・`NumberStepper`・
+  `CyclePicker`などの共通UIパーツ）
 - `src/hooks/useWorkoutTimer.ts` — Web版の`setInterval`+`Date.now()`方式のタイマー
   状態機械（work/rest/tabata_work/tabata_rest）をそのまま移植したもの
 - `src/lib/` — ロジック層。`equipmentUtils.ts` と `workoutPlans.ts` は
   Web版（`../src/lib`, `../src/components/FitTrack.tsx`）からそのままコピーしたもの。
-  `plans.ts` / `equipment.ts` / `records.ts` はSupabaseとの読み書き（初回シード含む）
+  `plans.ts`（`upsertPlan`含む） / `equipment.ts` / `records.ts` はSupabaseとの
+  読み書き（初回シード含む）
 - `src/assets/sounds/` — タイマーのビープ音（`.wav`）。Web版`playBeep`と同じ周波数・
   長さで生成したもの（Web Audioのオシレータ合成はネイティブに無いため、音源ファイルに
   置き換え。`expo-audio`で再生）
 - `src/types/` — 型定義。Web版 `../src/types` と同一（`assets.d.ts`は`.wav`インポート用の追加分）
 
-## 現状（フェーズ1・進行中）
+## 現状（フェーズ2・進行中）
 
 - フェーズ0: Supabase（Google OAuth）でのログイン／ログアウト — 完了
-- フェーズ1でここまで実装したもの（JS側のみ、`docs/native-app-rewrite.md`の
-  「ワークアウト記録画面」部分）
-  - 曜日ごとのプラン表示、トレーニング開始／休養日として記録
-  - セットごとの重量・回数（またはduration種目の秒数）入力、前回記録の引き継ぎ
-  - work / rest / タバタ(work⇔rest サイクル) タイマーとビープ音
-  - 記録の保存（`records`テーブル）
-- まだ実装していないもの（フェーズ1の残り、`docs/native-app-rewrite.md` §5参照）
-  - Androidの前面サービス（Kotlin）。現状のタイマーは**アプリがフォアグラウンドの
-    間だけ**正確に動く。バックグラウンド・画面オフでは止まる（Web版と同じ制約）
-  - 前面サービス側での鳴らし分けの本実装
-  - 簡易オフライン対応（§4）
-  - プラン編集・履歴・分析・プロフィール画面（フェーズ2）
+- フェーズ1: ワークアウト記録画面＋タイマーUI（JS側） — 完了。Androidの前面
+  サービス（Kotlin）は未実装（詳細設計は`docs/tabata-foreground-service.md`）。
+  現状のタイマーは**アプリがフォアグラウンドの間だけ**正確に動く（Web版と同じ制約）
+- フェーズ2でここまで実装したもの
+  - タブナビゲーション（ワークアウト／プラン）と、両画面でplans/equipment/records
+    を共有する`WorkoutDataContext`
+  - プラン画面: 曜日ごとの閲覧、カテゴリ・種目（名前／タイプ／セット数／回数or秒数／
+    機材／インターバル／タバタ設定）の編集、種目の追加・削除、スーパーセットの
+    接続・解除、保存
+- まだ実装していないもの（フェーズ2の残り）
+  - 履歴・分析・プロフィールタブ
+  - 簡易オフライン対応（`docs/native-app-rewrite.md` §4、フェーズ1の残り）
 
 ## Supabaseプロジェクトの移行について（2026-09-26）
 
