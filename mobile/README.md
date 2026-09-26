@@ -42,7 +42,8 @@ Windows/Mac環境で行う（sukusukuの `docs/mobile-local-build.md` と同じ�
   `savePlan`/`recordWorkout`/`recordRest`で更新する）
 - `src/components/` — `WorkoutRecordScreen.tsx`（ワークアウト記録画面本体）、
   `PlanScreen.tsx`（プラン閲覧・編集画面）、`HistoryScreen.tsx`（履歴一覧・
-  月/年フィルタ）、`TimerBar.tsx`（画面下部のフローティングタイマー表示）、
+  月/年フィルタ）、`AnalyticsScreen.tsx`（頑張りサマリー・部位別内訳・活動
+  カレンダー）、`TimerBar.tsx`（画面下部のフローティングタイマー表示）、
   `shared/`（`DayTabs`・`NumberStepper`・`CyclePicker`などの共通UIパーツ）
 - `src/hooks/useWorkoutTimer.ts` — Web版の`setInterval`+`Date.now()`方式のタイマー
   状態機械（work/rest/tabata_work/tabata_rest）をそのまま移植したもの
@@ -62,15 +63,17 @@ Windows/Mac環境で行う（sukusukuの `docs/mobile-local-build.md` と同じ�
   サービス（Kotlin）は未実装（詳細設計は`docs/tabata-foreground-service.md`）。
   現状のタイマーは**アプリがフォアグラウンドの間だけ**正確に動く（Web版と同じ制約）
 - フェーズ2でここまで実装したもの
-  - タブナビゲーション（ワークアウト／プラン／履歴）と、各画面でplans/equipment/
-    recordsを共有する`WorkoutDataContext`
+  - タブナビゲーション（ワークアウト／プラン／履歴／分析）と、各画面でplans/
+    equipment/recordsを共有する`WorkoutDataContext`
   - プラン画面: 曜日ごとの閲覧、カテゴリ・種目（名前／タイプ／セット数／回数or秒数／
     機材／インターバル／タバタ設定）の編集、種目の追加・削除、スーパーセットの
     接続・解除、保存
   - 履歴画面: 月/年単位のフィルタ切替、前後の月・年への移動、記録一覧
     （種目ごとの完了セット数／目標セット数、休養日の表示）
+  - 分析画面: 月/年単位の頑張りサマリー（総レップ＆秒数・実行率・セット数等）、
+    部位別カテゴリ内訳、直近5週の活動カレンダー（タップで記録詳細を表示）
 - まだ実装していないもの（フェーズ2の残り）
-  - 分析・プロフィールタブ
+  - プロフィールタブ
   - 簡易オフライン対応（`docs/native-app-rewrite.md` §4、フェーズ1の残り）
 
 ## Supabaseプロジェクトの移行について（2026-09-26）
