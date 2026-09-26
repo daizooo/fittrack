@@ -1,0 +1,9 @@
+{
+  "name": "tabata-timer",
+  "version": "1.0.0",
+  "description": "Local Expo module: Android foreground service for accurate work/rest/tabata timing while the app is backgrounded.",
+  "main": "index.ts",
+  "types": "index.ts",
+  "license": "UNLICENSED",
+  "private": true
+}

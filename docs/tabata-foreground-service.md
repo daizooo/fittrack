@@ -2,12 +2,37 @@
 
 `native-app-rewrite.md` フェーズ1の「タイマーだけネイティブで正確に回る」を実現する
 ための詳細設計。JS側の記録画面・タイマーUI（`mobile/src/components/WorkoutRecordScreen.tsx`,
-`mobile/src/hooks/useWorkoutTimer.ts`）は実装済み。ここではそれをアプリが
+`mobile/src/hooks/useJsWorkoutTimer.ts`）は実装済み。ここではそれをアプリが
 バックグラウンド／画面オフでも正確に動かすための、Kotlin側の設計を固める。
 
-このドキュメントの時点ではコードは書いていない。この開発環境（Claude Code）には
-Android SDKが無くビルド・実機検証が一切できないため、実装は次回（手元のAndroid SDK
-がある環境、または少なくとも型チェックしか確認できないと割り切れるセッション）で行う。
+## 実装状況（追記）
+
+以下§1〜§6の設計どおりに`mobile/modules/tabata-timer/`一式・`useNativeWorkoutTimer.ts`・
+`useWorkoutTimer.ts`（切り替え層）を実装済み。ただし下記の点はこの開発環境（Claude Code、
+Android SDK無し）での制約により未検証・設計からの変更がある。
+
+- **検証できたこと**: `TimerEngine.kt`はAndroidフレームワークに依存しない純粋なKotlinの
+  ため、この環境にあるJava/Kotlinコンパイラ（Gradle同梱のkotlin-compiler-embeddable）だけで
+  実際にコンパイル＆スモークテストを実行し、work/rest/タバタの状態遷移が正しいことを確認した。
+  `android/src/test/`にも同内容のJUnitテスト（`TimerEngineTest.kt`）を置いてあるので、
+  Android SDKがある環境では`./gradlew :tabata-timer:testDebugUnitTest`でも実行できる
+  （このJUnit実行自体はこの環境では未実施）
+- **検証できたこと（その2）**: `expo-modules-autolinking`をこのプロジェクトの
+  `node_modules`から直接叩き、`modules/tabata-timer/`がAndroid/iOS両方で正しく検出され
+  autolinking対象になることを確認済み（`expo prebuild`を実行しなくても検証できた）
+- **未検証**: `TabataTimerService.kt` / `TabataTimerModule.kt` / `AlarmPlayer.kt`は
+  Android SDKのクラス（`Service`, `NotificationCompat`, `SoundPool`等）に依存するため、
+  この環境ではコンパイルできていない。`expo prebuild -p android`→実機ビルドでの
+  ビルド確認・実機での動作確認（画面オフでの動作継続、通知、ビープ音）はまだ
+- **§6からの変更点**: AndroidManifestへの権限・`<service>`宣言は、config plugin
+  （`withTabataTimerService.js`）ではなく`modules/tabata-timer/android/src/main/AndroidManifest.xml`
+  に直接書き、Gradleのマニフェストマージに任せる方式にした（`expo-web-browser`等の既存
+  Expoモジュールが権限追加やActivity登録をこの方式で行っているのを確認し、より単純な
+  ため採用）。この変更によりconfig pluginは不要になり、`app.json`の変更も不要
+- **§6からの変更点（その2）**: `POST_NOTIFICATIONS`の実行時許可リクエストは
+  `expo-notifications`を追加せず、React Native標準の`PermissionsAndroid`で
+  `useNativeWorkoutTimer.ts`から直接リクエストする形にした（新規ネイティブ依存を
+  増やさないため）
 
 ## 0. 決めたこと
 
@@ -177,21 +202,29 @@ Web版`playBeep`呼び出し４種類 → `SoundCue`の4値に対応（`countdow
 
 ## 7. 検証の限界（この開発環境）
 
-- `TimerEngine.kt`は純粋なKotlinなのでJVMユニットテスト
-  （`./gradlew :modules:tabata-timer:test`）で検証できる**はず**だが、
-  この環境にはAndroid SDK/Gradleが無く`android/`ディレクトリ自体が
-  存在しないため、ここでは実行できない
-- 実装は次回、`expo prebuild -p android`を実行できる環境（手元のWindows/Mac、
-  または少なくとも型チェックしか確認できないと割り切れるセッション）で行う
-- 実装後の受け入れ基準は`native-app-rewrite.md`のフェーズ1と同じ：
+- `TimerEngine.kt`は純粋なKotlinなので、この環境にあるGradle同梱のKotlinコンパイラ
+  （Android SDK不要）で実際にコンパイル・スモークテストを実行し、work/rest/タバタの
+  状態遷移ロジックを検証済み（上記「実装状況」参照）。`android/src/test/`の
+  `TimerEngineTest.kt`（JUnit）は書いたが、`./gradlew`経由での実行はAndroid SDKが
+  無いためこの環境では未実施
+- `TabataTimerService.kt`等のAndroid SDK依存部分（`Service`, `NotificationCompat`,
+  `SoundPool`）はこの環境ではコンパイルできない。コードレビューと設計ドキュメントとの
+  突き合わせのみで実装した
+- `expo-modules-autolinking`を直接実行し、`modules/tabata-timer/`が
+  Android/iOS双方でautolinking対象として正しく検出されることは確認済み
+  （`expo prebuild`自体はこの環境では実行できない）
+- 次回、`expo prebuild -p android`を実行できる環境（手元のWindows/Mac）で
+  実機ビルド・実機確認を行う。受け入れ基準は`native-app-rewrite.md`のフェーズ1と同じ：
   実機に入れて、画面オフでもタバタのwork⇔rest切替とビープが正確に鳴ることを確認する
 
 ## 8. 移行手順（まとめ）
 
-1. 本ドキュメントで設計を確定（今回はここまで）
-2. `modules/tabata-timer/`一式・config plugin・`TimerEngine.kt`のユニット
-   テストを実装
-3. `useWorkoutTimer.ts`を§2のとおり分割・差し替え
-4. `expo prebuild -p android`→実機ビルドで動作確認（画面オフ耐性を含む）
+1. 本ドキュメントで設計を確定
+2. `modules/tabata-timer/`一式・`TimerEngine.kt`のユニットテストを実装 — 完了
+   （config pluginは使わず、モジュール自身の`AndroidManifest.xml`で権限・
+   `<service>`宣言をマージする方式に変更。§0/§6参照）
+3. `useWorkoutTimer.ts`を§2のとおり分割・差し替え — 完了
+   （`useJsWorkoutTimer.ts` / `useNativeWorkoutTimer.ts` / `useWorkoutTimer.ts`）
+4. `expo prebuild -p android`→実機ビルドで動作確認（画面オフ耐性を含む） — **次回**
 5. 安定を確認できたらフェーズ1完了。JSフォールバック実装は
    Expo Go／開発時の利便性のため残す（削除しない）

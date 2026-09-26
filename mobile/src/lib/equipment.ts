@@ -1,6 +1,6 @@
 import { supabase } from './supabase'
 import { DEFAULT_LOAD_EQUIPMENT } from './equipmentUtils'
-import type { EquipmentItem } from '../types'
+import type { EquipmentItem, EquipmentWeightConfig } from '../types'
 
 /** Web版と同じ「初回ログイン時にデフォルト機材をシードする」挙動をmobileでも踏襲。 */
 export async function fetchOrSeedEquipment(userId: string): Promise<EquipmentItem[]> {
@@ -33,4 +33,41 @@ export async function fetchOrSeedEquipment(userId: string): Promise<EquipmentIte
   )
   if (insertError) throw insertError
   return DEFAULT_LOAD_EQUIPMENT
+}
+
+export async function addLoadEquipment(
+  userId: string, name: string, direction: '+' | '-' | null, weight: EquipmentWeightConfig
+): Promise<EquipmentItem> {
+  const { data, error } = await supabase.from('equipment').insert({
+    user_id: userId, name, category: 'load', direction, weight
+  }).select().single()
+  if (error) throw error
+
+  return {
+    id: data.id as string,
+    name: data.name as string,
+    category: 'load',
+    direction: data.direction as '+' | '-' | null,
+    weight: data.weight as EquipmentWeightConfig
+  }
+}
+
+export async function addDataEquipment(userId: string, name: string): Promise<EquipmentItem> {
+  const { data, error } = await supabase.from('equipment').insert({
+    user_id: userId, name, category: 'data', direction: null, weight: null
+  }).select().single()
+  if (error) throw error
+
+  return {
+    id: data.id as string,
+    name: data.name as string,
+    category: 'data',
+    direction: null,
+    weight: null
+  }
+}
+
+export async function deleteEquipment(userId: string, equipId: string): Promise<void> {
+  const { error } = await supabase.from('equipment').delete().eq('id', equipId).eq('user_id', userId)
+  if (error) throw error
 }

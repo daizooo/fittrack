@@ -1,8 +1,10 @@
 # mobile/（FITTRACK Androidネイティブ版）
 
 設計の背景は `../docs/native-app-rewrite.md` を参照。フェーズ0（土台づくり）・
-フェーズ1のJS側実装（ワークアウト記録画面＋タイマーUI）は完了し、
-現在はフェーズ2（プラン／履歴／分析／プロフィールの各タブ）に着手中。
+フェーズ2（プラン／履歴／分析／プロフィールの各タブ）は完了。フェーズ1は
+JS側実装＋簡易オフライン対応が完了、Android前面サービス（Kotlin）もコードとしては
+実装済みだが、この開発環境にはAndroid SDKが無いため実機ビルド・検証はまだ
+（詳細は`../docs/tabata-foreground-service.md`「実装状況」を参照）。
 
 ## セットアップ
 
@@ -35,36 +37,48 @@ Windows/Mac環境で行う（sukusukuの `docs/mobile-local-build.md` と同じ�
 
 - `src/app/` — 画面（Expo Router。ファイル1つ＝1画面）。`login.tsx`が未ログイン時、
   `(app)/`グループがログイン後のタブ画面（`_layout.tsx`がタブ定義、`index.tsx`が
-  ワークアウトタブ、`plan.tsx`がプランタブ、`history.tsx`が履歴タブ）。ルートの
-  `_layout.tsx`が`Stack.Protected`でセッション有無により両者を出し分ける
+  ワークアウトタブ、`plan.tsx`がプランタブ、`history.tsx`が履歴タブ、`analytics.tsx`が
+  分析タブ、`profile.tsx`がプロフィールタブ）。ルートの`_layout.tsx`が
+  `Stack.Protected`でセッション有無により両者を出し分ける
 - `src/context/` — `SessionContext.tsx`（supabaseセッション）、
-  `WorkoutDataContext.tsx`（plans/equipment/recordsを画面間で共有し、
-  `savePlan`/`recordWorkout`/`recordRest`で更新する）
-- `src/components/` — `WorkoutRecordScreen.tsx`（ワークアウト記録画面本体）、
-  `PlanScreen.tsx`（プラン閲覧・編集画面）、`HistoryScreen.tsx`（履歴一覧・
-  月/年フィルタ）、`AnalyticsScreen.tsx`（頑張りサマリー・部位別内訳・活動
-  カレンダー）、`TimerBar.tsx`（画面下部のフローティングタイマー表示）、
-  `shared/`（`DayTabs`・`NumberStepper`・`CyclePicker`などの共通UIパーツ）
-- `src/hooks/useWorkoutTimer.ts` — Web版の`setInterval`+`Date.now()`方式のタイマー
-  状態機械（work/rest/tabata_work/tabata_rest）をそのまま移植したもの
+  `WorkoutDataContext.tsx`（plans/equipment/records/profile/bodyLogsを画面間で共有し、
+  `savePlan`/`recordWorkout`/`recordRest`/`saveProfile`/`addBodyLog`等で更新する。
+  オフライン時に一時保存した記録の再送信・件数管理もここが担う）
+- `src/components/` — `WorkoutRecordScreen.tsx`（ワークアウト記録画面本体。未送信
+  記録があれば再送信バナーを表示）、`PlanScreen.tsx`（プラン閲覧・編集画面）、
+  `HistoryScreen.tsx`（履歴一覧・月/年フィルタ）、`AnalyticsScreen.tsx`（頑張り
+  サマリー・部位別内訳・活動カレンダー）、`ProfileScreen.tsx`（身体情報・体重体脂肪
+  ログ・器具管理・目標スケジュール・データエクスポート）、`TimerBar.tsx`（画面下部の
+  フローティングタイマー表示）、`shared/`（`DayTabs`・`NumberStepper`・`CyclePicker`
+  などの共通UIパーツ）
+- `src/hooks/` — `useWorkoutTimer.ts`（ネイティブモジュールの有無で下記2つを切り替える
+  薄い層）、`useJsWorkoutTimer.ts`（Web版の`setInterval`+`Date.now()`方式のタイマー
+  状態機械をそのまま移植したもの。フォールバック用）、`useNativeWorkoutTimer.ts`
+  （`modules/tabata-timer/`＝Android前面サービスに委譲する版）
 - `src/lib/` — ロジック層。`equipmentUtils.ts` と `workoutPlans.ts` は
   Web版（`../src/lib`, `../src/components/FitTrack.tsx`）からそのままコピーしたもの。
-  `plans.ts`（`upsertPlan`含む） / `equipment.ts` / `records.ts` はSupabaseとの
-  読み書き（初回シード含む）
+  `plans.ts` / `equipment.ts` / `records.ts` / `profile.ts` / `bodyLogs.ts` は
+  Supabaseとの読み書き（初回シード含む）。`offlineRecords.ts`は記録の送信に失敗した
+  場合のAsyncStorageへの一時保存・再送信（`docs/native-app-rewrite.md` §4の簡易オフライン対応）
 - `src/assets/sounds/` — タイマーのビープ音（`.wav`）。Web版`playBeep`と同じ周波数・
   長さで生成したもの（Web Audioのオシレータ合成はネイティブに無いため、音源ファイルに
-  置き換え。`expo-audio`で再生）
+  置き換え。JS側は`expo-audio`で再生、ネイティブ側は同じ音源を`modules/tabata-timer/`の
+  `res/raw/`にコピーして`SoundPool`で再生）
 - `src/types/` — 型定義。Web版 `../src/types` と同一（`assets.d.ts`は`.wav`インポート用の追加分）
+- `modules/tabata-timer/` — ローカルExpo Module。Android前面サービスでの高精度タイマー
+  （詳細設計・実装状況は`../docs/tabata-foreground-service.md`参照）
 
-## 現状（フェーズ2・進行中）
+## 現状
 
 - フェーズ0: Supabase（Google OAuth）でのログイン／ログアウト — 完了
-- フェーズ1: ワークアウト記録画面＋タイマーUI（JS側） — 完了。Androidの前面
-  サービス（Kotlin）は未実装（詳細設計は`docs/tabata-foreground-service.md`）。
-  現状のタイマーは**アプリがフォアグラウンドの間だけ**正確に動く（Web版と同じ制約）
-- フェーズ2でここまで実装したもの
-  - タブナビゲーション（ワークアウト／プラン／履歴／分析）と、各画面でplans/
-    equipment/recordsを共有する`WorkoutDataContext`
+- フェーズ1: ワークアウト記録画面＋タイマーUI（JS側）・簡易オフライン対応 — 完了。
+  Androidの前面サービス（Kotlin、`modules/tabata-timer/`）はコードとして実装済みだが、
+  この開発環境にはAndroid SDKが無いため実機ビルド・検証はまだ（`docs/tabata-foreground-service.md`
+  「実装状況」参照）。ネイティブモジュール未リンク時（Expo Go等）はJS側フォールバックが
+  自動的に使われ、その場合タイマーは**アプリがフォアグラウンドの間だけ**正確に動く
+- フェーズ2: プラン／履歴／分析／プロフィールの各タブ — 完了
+  - タブナビゲーション（ワークアウト／プラン／履歴／分析／プロフィール）と、各画面で
+    plans/equipment/records/profile/bodyLogsを共有する`WorkoutDataContext`
   - プラン画面: 曜日ごとの閲覧、カテゴリ・種目（名前／タイプ／セット数／回数or秒数／
     機材／インターバル／タバタ設定）の編集、種目の追加・削除、スーパーセットの
     接続・解除、保存
@@ -72,9 +86,9 @@ Windows/Mac環境で行う（sukusukuの `docs/mobile-local-build.md` と同じ�
     （種目ごとの完了セット数／目標セット数、休養日の表示）
   - 分析画面: 月/年単位の頑張りサマリー（総レップ＆秒数・実行率・セット数等）、
     部位別カテゴリ内訳、直近5週の活動カレンダー（タップで記録詳細を表示）
-- まだ実装していないもの（フェーズ2の残り）
-  - プロフィールタブ
-  - 簡易オフライン対応（`docs/native-app-rewrite.md` §4、フェーズ1の残り）
+  - プロフィール画面: 身体情報（生年月日・性別・身長）、体重・体脂肪ログの追加／削除、
+    器具管理（負荷器具・データ器具の追加／削除）、目標・曜日別スケジュール、
+    データエクスポート（JSON、`Share.share`で共有）
 
 ## Supabaseプロジェクトの移行について（2026-09-26）
 

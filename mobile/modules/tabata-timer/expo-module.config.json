@@ -1,0 +1,9 @@
+{
+  "platforms": ["android", "ios"],
+  "ios": {
+    "modules": ["TabataTimerModule"]
+  },
+  "android": {
+    "modules": ["expo.modules.tabatatimer.TabataTimerModule"]
+  }
+}
