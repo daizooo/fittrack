@@ -1,6 +1,6 @@
 import { Tabs } from 'expo-router'
 import { TouchableOpacity } from 'react-native'
-import { CalendarDays, Dumbbell, LogOut } from 'lucide-react-native'
+import { CalendarDays, Dumbbell, History, LogOut } from 'lucide-react-native'
 import { useSession } from '../../context/SessionContext'
 import { WorkoutDataProvider } from '../../context/WorkoutDataContext'
 import { supabase } from '../../lib/supabase'
@@ -39,6 +39,13 @@ export default function AppLayout() {
           options={{
             title: 'プラン',
             tabBarIcon: ({ color, size }) => <CalendarDays color={color} size={size} />
+          }}
+        />
+        <Tabs.Screen
+          name="history"
+          options={{
+            title: '履歴',
+            tabBarIcon: ({ color, size }) => <History color={color} size={size} />
           }}
         />
       </Tabs>

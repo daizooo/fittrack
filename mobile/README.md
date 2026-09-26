@@ -35,15 +35,15 @@ Windows/Mac環境で行う（sukusukuの `docs/mobile-local-build.md` と同じ�
 
 - `src/app/` — 画面（Expo Router。ファイル1つ＝1画面）。`login.tsx`が未ログイン時、
   `(app)/`グループがログイン後のタブ画面（`_layout.tsx`がタブ定義、`index.tsx`が
-  ワークアウトタブ、`plan.tsx`がプランタブ）。ルートの`_layout.tsx`が
-  `Stack.Protected`でセッション有無により両者を出し分ける
+  ワークアウトタブ、`plan.tsx`がプランタブ、`history.tsx`が履歴タブ）。ルートの
+  `_layout.tsx`が`Stack.Protected`でセッション有無により両者を出し分ける
 - `src/context/` — `SessionContext.tsx`（supabaseセッション）、
   `WorkoutDataContext.tsx`（plans/equipment/recordsを画面間で共有し、
   `savePlan`/`recordWorkout`/`recordRest`で更新する）
 - `src/components/` — `WorkoutRecordScreen.tsx`（ワークアウト記録画面本体）、
-  `PlanScreen.tsx`（プラン閲覧・編集画面）、`TimerBar.tsx`（画面下部の
-  フローティングタイマー表示）、`shared/`（`DayTabs`・`NumberStepper`・
-  `CyclePicker`などの共通UIパーツ）
+  `PlanScreen.tsx`（プラン閲覧・編集画面）、`HistoryScreen.tsx`（履歴一覧・
+  月/年フィルタ）、`TimerBar.tsx`（画面下部のフローティングタイマー表示）、
+  `shared/`（`DayTabs`・`NumberStepper`・`CyclePicker`などの共通UIパーツ）
 - `src/hooks/useWorkoutTimer.ts` — Web版の`setInterval`+`Date.now()`方式のタイマー
   状態機械（work/rest/tabata_work/tabata_rest）をそのまま移植したもの
 - `src/lib/` — ロジック層。`equipmentUtils.ts` と `workoutPlans.ts` は
@@ -62,13 +62,15 @@ Windows/Mac環境で行う（sukusukuの `docs/mobile-local-build.md` と同じ�
   サービス（Kotlin）は未実装（詳細設計は`docs/tabata-foreground-service.md`）。
   現状のタイマーは**アプリがフォアグラウンドの間だけ**正確に動く（Web版と同じ制約）
 - フェーズ2でここまで実装したもの
-  - タブナビゲーション（ワークアウト／プラン）と、両画面でplans/equipment/records
-    を共有する`WorkoutDataContext`
+  - タブナビゲーション（ワークアウト／プラン／履歴）と、各画面でplans/equipment/
+    recordsを共有する`WorkoutDataContext`
   - プラン画面: 曜日ごとの閲覧、カテゴリ・種目（名前／タイプ／セット数／回数or秒数／
     機材／インターバル／タバタ設定）の編集、種目の追加・削除、スーパーセットの
     接続・解除、保存
+  - 履歴画面: 月/年単位のフィルタ切替、前後の月・年への移動、記録一覧
+    （種目ごとの完了セット数／目標セット数、休養日の表示）
 - まだ実装していないもの（フェーズ2の残り）
-  - 履歴・分析・プロフィールタブ
+  - 分析・プロフィールタブ
   - 簡易オフライン対応（`docs/native-app-rewrite.md` §4、フェーズ1の残り）
 
 ## Supabaseプロジェクトの移行について（2026-09-26）

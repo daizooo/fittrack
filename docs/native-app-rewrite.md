@@ -87,7 +87,7 @@ sukusuku同様の本格的なローカルDB＋同期の仕組みまでは、現�
 | 1a. （進捗）ワークアウト記録画面＋タイマーUI | JS側で実装済み（`mobile/src/components/WorkoutRecordScreen.tsx`, `mobile/src/hooks/useWorkoutTimer.ts`）。setInterval+Date.now()方式のためフォアグラウンドでのみ正確 | — |
 | 1b. （設計済み・未実装）前面サービス | Kotlin側の詳細設計は`docs/tabata-foreground-service.md`を参照。Android SDKが無い環境のため実装はまだ | — |
 | 2. 残りの画面 | プラン／履歴／分析／プロフィールの各タブ | Android上でPWA相当の全機能が揃う |
-| 2a. （進捗）タブナビゲーション＋プラン画面 | 実装済み（`mobile/src/app/(app)/`, `mobile/src/components/PlanScreen.tsx`）。plans/equipment/recordsは`WorkoutDataContext`でタブ間共有。履歴／分析／プロフィールは未着手 | — |
+| 2a. （進捗）タブナビゲーション＋プラン／履歴画面 | 実装済み（`mobile/src/app/(app)/`, `mobile/src/components/PlanScreen.tsx`, `HistoryScreen.tsx`）。plans/equipment/recordsは`WorkoutDataContext`でタブ間共有。分析／プロフィールは未着手 | — |
 | 3. 通知 | 現状FitTrackに通知機能は無い。将来トレーニングリマインダー等を足すなら検討 | — |
 | 4. 畳む | PWAのデプロイを止め、`src/` を削除 | Android移行が安定し、退路が不要と確認できてから |
 
