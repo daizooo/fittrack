@@ -1,6 +1,7 @@
 # mobile/（FITTRACK Androidネイティブ版）
 
-設計の背景は `../docs/native-app-rewrite.md` を参照。フェーズ0（土台づくり）の内容。
+設計の背景は `../docs/native-app-rewrite.md` を参照。フェーズ0（土台づくり）は完了し、
+現在はフェーズ1（Tabataタイマー）に着手中。
 
 ## セットアップ
 
@@ -32,14 +33,33 @@ Windows/Mac環境で行う（sukusukuの `docs/mobile-local-build.md` と同じ�
 ## 構成
 
 - `src/app/` — 画面（Expo Router。ファイル1つ＝1画面）
+- `src/components/` — `WorkoutRecordScreen.tsx`（ワークアウト記録画面本体）、
+  `TimerBar.tsx`（画面下部のフローティングタイマー表示）
+- `src/hooks/useWorkoutTimer.ts` — Web版の`setInterval`+`Date.now()`方式のタイマー
+  状態機械（work/rest/tabata_work/tabata_rest）をそのまま移植したもの
 - `src/lib/` — ロジック層。`equipmentUtils.ts` と `workoutPlans.ts` は
-  Web版（`../src/lib`, `../src/components/FitTrack.tsx`）からそのままコピーしたもの
-- `src/types/` — 型定義。Web版 `../src/types` と同一
+  Web版（`../src/lib`, `../src/components/FitTrack.tsx`）からそのままコピーしたもの。
+  `plans.ts` / `equipment.ts` / `records.ts` はSupabaseとの読み書き（初回シード含む）
+- `src/assets/sounds/` — タイマーのビープ音（`.wav`）。Web版`playBeep`と同じ周波数・
+  長さで生成したもの（Web Audioのオシレータ合成はネイティブに無いため、音源ファイルに
+  置き換え。`expo-audio`で再生）
+- `src/types/` — 型定義。Web版 `../src/types` と同一（`assets.d.ts`は`.wav`インポート用の追加分）
 
-## 現状（フェーズ0）
+## 現状（フェーズ1・進行中）
 
-- Supabase（Google OAuth）でのログイン／ログアウトのみ実装済み
-- ワークアウト記録・タイマー等の画面はまだ無い（フェーズ1で着手）
+- フェーズ0: Supabase（Google OAuth）でのログイン／ログアウト — 完了
+- フェーズ1でここまで実装したもの（JS側のみ、`docs/native-app-rewrite.md`の
+  「ワークアウト記録画面」部分）
+  - 曜日ごとのプラン表示、トレーニング開始／休養日として記録
+  - セットごとの重量・回数（またはduration種目の秒数）入力、前回記録の引き継ぎ
+  - work / rest / タバタ(work⇔rest サイクル) タイマーとビープ音
+  - 記録の保存（`records`テーブル）
+- まだ実装していないもの（フェーズ1の残り、`docs/native-app-rewrite.md` §5参照）
+  - Androidの前面サービス（Kotlin）。現状のタイマーは**アプリがフォアグラウンドの
+    間だけ**正確に動く。バックグラウンド・画面オフでは止まる（Web版と同じ制約）
+  - 前面サービス側での鳴らし分けの本実装
+  - 簡易オフライン対応（§4）
+  - プラン編集・履歴・分析・プロフィール画面（フェーズ2）
 
 ## Supabaseプロジェクトの移行について（2026-09-26）
 

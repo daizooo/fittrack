@@ -1,8 +1,11 @@
 import { useEffect, useState } from 'react'
 import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
+import { SafeAreaView } from 'react-native-safe-area-context'
+import { LogOut } from 'lucide-react-native'
 import type { Session } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
 import { signInWithGoogle } from '../lib/auth'
+import WorkoutRecordScreen from '../components/WorkoutRecordScreen'
 
 export default function Index() {
   const [session, setSession] = useState<Session | null>(null)
@@ -60,24 +63,31 @@ export default function Index() {
     )
   }
 
-  // フェーズ0はログイン確認までがゴール。プラン・記録・タイマー等の画面は
-  // フェーズ1（docs/native-app-rewrite.md）以降で作る。
   return (
-    <View style={styles.center}>
-      <Text style={styles.title}>FITTRACK</Text>
-      <Text style={styles.subtitle}>ログイン済み: {session.user.email}</Text>
-      <TouchableOpacity style={styles.button} onPress={handleLogout}>
-        <Text style={styles.buttonText}>ログアウト</Text>
-      </TouchableOpacity>
-    </View>
+    <SafeAreaView style={styles.fill} edges={['top']}>
+      <View style={styles.header}>
+        <Text style={styles.headerTitle}>FITTRACK</Text>
+        <TouchableOpacity onPress={handleLogout} hitSlop={8}>
+          <LogOut size={20} color="#9ca3af" />
+        </TouchableOpacity>
+      </View>
+      <WorkoutRecordScreen userId={session.user.id} />
+    </SafeAreaView>
   )
 }
 
 const styles = StyleSheet.create({
+  fill: { flex: 1, backgroundColor: '#f9fafb' },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#f9fafb', padding: 24 },
   title: { fontSize: 28, fontWeight: '900', color: '#111827', marginBottom: 8 },
   subtitle: { fontSize: 14, color: '#6b7280', marginBottom: 24, textAlign: 'center' },
   error: { fontSize: 13, color: '#dc2626', marginBottom: 16, textAlign: 'center' },
   button: { backgroundColor: '#2563eb', paddingVertical: 14, paddingHorizontal: 32, borderRadius: 12 },
-  buttonText: { color: '#fff', fontWeight: '700', fontSize: 15 }
+  buttonText: { color: '#fff', fontWeight: '700', fontSize: 15 },
+  header: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: 20, height: 52, backgroundColor: '#fff',
+    borderBottomWidth: 1, borderBottomColor: '#f3f4f6'
+  },
+  headerTitle: { fontSize: 16, fontWeight: '900', color: '#111827', letterSpacing: 1 }
 })
