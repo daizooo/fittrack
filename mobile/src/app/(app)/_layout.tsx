@@ -1,6 +1,6 @@
 import { Tabs } from 'expo-router'
 import { TouchableOpacity } from 'react-native'
-import { BarChart3, CalendarDays, Dumbbell, History, LogOut } from 'lucide-react-native'
+import { BarChart3, CalendarDays, Dumbbell, History, LogOut, User } from 'lucide-react-native'
 import { useSession } from '../../context/SessionContext'
 import { WorkoutDataProvider } from '../../context/WorkoutDataContext'
 import { supabase } from '../../lib/supabase'
@@ -53,6 +53,13 @@ export default function AppLayout() {
           options={{
             title: '分析',
             tabBarIcon: ({ color, size }) => <BarChart3 color={color} size={size} />
+          }}
+        />
+        <Tabs.Screen
+          name="profile"
+          options={{
+            title: 'プロフィール',
+            tabBarIcon: ({ color, size }) => <User color={color} size={size} />
           }}
         />
       </Tabs>

@@ -84,15 +84,18 @@ sukusuku同様の本格的なローカルDB＋同期の仕組みまでは、現�
 | --- | --- | --- |
 | 0. 土台 | `mobile/` にExpoを置き、Supabaseへログインできるところまで。ロジック層（定義データ・型・equipmentUtils）を移植 | 実機で自分の記録が1件読める |
 | 1. Tabataタイマー | ワークアウト記録画面＋前面サービス（Kotlin）＋鳴らし分け＋簡易オフライン対応（§4） | **タイマーだけネイティブで正確に回る。**当初の目的はここで達成される |
-| 1a. （進捗）ワークアウト記録画面＋タイマーUI | JS側で実装済み（`mobile/src/components/WorkoutRecordScreen.tsx`, `mobile/src/hooks/useWorkoutTimer.ts`）。setInterval+Date.now()方式のためフォアグラウンドでのみ正確 | — |
-| 1b. （設計済み・未実装）前面サービス | Kotlin側の詳細設計は`docs/tabata-foreground-service.md`を参照。Android SDKが無い環境のため実装はまだ | — |
+| 1a. （進捗）ワークアウト記録画面＋タイマーUI | JS側で実装済み（`mobile/src/components/WorkoutRecordScreen.tsx`, `mobile/src/hooks/useJsWorkoutTimer.ts`）。setInterval+Date.now()方式のためフォアグラウンドでのみ正確 | — |
+| 1b. （実装済み・実機未検証）前面サービス | `mobile/modules/tabata-timer/`にKotlin側を実装済み（詳細設計は`docs/tabata-foreground-service.md`）。この開発環境にはAndroid SDKが無く`expo prebuild -p android`以降の実機ビルド・検証はまだ | — |
+| 1c. （実装済み）簡易オフライン対応 | `mobile/src/lib/offlineRecords.ts`。記録の送信に失敗した場合AsyncStorageへ一時保存し、アプリ復帰時に再送信 | — |
 | 2. 残りの画面 | プラン／履歴／分析／プロフィールの各タブ | Android上でPWA相当の全機能が揃う |
-| 2a. （進捗）タブナビゲーション＋プラン／履歴／分析画面 | 実装済み（`mobile/src/app/(app)/`, `mobile/src/components/PlanScreen.tsx`, `HistoryScreen.tsx`, `AnalyticsScreen.tsx`）。plans/equipment/recordsは`WorkoutDataContext`でタブ間共有。プロフィールタブは未着手 | — |
+| 2a. （実装済み）タブナビゲーション＋プラン／履歴／分析／プロフィール画面 | 実装済み（`mobile/src/app/(app)/`, `mobile/src/components/PlanScreen.tsx`, `HistoryScreen.tsx`, `AnalyticsScreen.tsx`, `ProfileScreen.tsx`）。plans/equipment/records/profile/bodyLogsは`WorkoutDataContext`でタブ間共有 | フェーズ2完了 |
 | 3. 通知 | 現状FitTrackに通知機能は無い。将来トレーニングリマインダー等を足すなら検討 | — |
 | 4. 畳む | PWAのデプロイを止め、`src/` を削除 | Android移行が安定し、退路が不要と確認できてから |
 
-- フェーズ1で一度実機に入れて使う。sukusukuの凍結の真因（実機で一度も動かない
-  まま積み上がったこと）を避けるため、早期に実機確認する原則をそのまま採用
+- フェーズ1bは実機に入れて初めて完了する。sukusukuの凍結の真因（実機で一度も動かない
+  まま積み上がったこと）を避けるため、コードとしては書き上げたが、次回はAndroid SDKが
+  ある環境（手元のWindows/Mac）で`expo prebuild -p android`→実機ビルド→画面オフ耐性の
+  確認まで行うことが最優先
 - フェーズ4は急がない。ストア非公開・自端末専用なので、畳んで得られるのは
   見通しの良さだけであり、失うのは「ネイティブ版が壊れたときの退路」
 

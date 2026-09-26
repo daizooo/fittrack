@@ -3,7 +3,7 @@ import {
   ActivityIndicator, Alert, ScrollView, StyleSheet, Text,
   TouchableOpacity, View
 } from 'react-native'
-import { CheckCircle, ChevronLeft, Moon, Play, Timer } from 'lucide-react-native'
+import { CheckCircle, ChevronLeft, CloudOff, Moon, Play, Timer } from 'lucide-react-native'
 import { useWorkoutData } from '../context/WorkoutDataContext'
 import { daysOfWeek } from '../lib/workoutPlans'
 import { useWorkoutTimer } from '../hooks/useWorkoutTimer'
@@ -16,7 +16,10 @@ export default function WorkoutRecordScreen() {
   const todayDayStr = daysOfWeek[new Date().getDay()]
   const todayDateStr = new Date().toLocaleDateString('ja-JP', { month: 'numeric', day: 'numeric' })
 
-  const { plans, records, equipmentOptionsMap, dataLoading, loadError, recordWorkout, recordRest } = useWorkoutData()
+  const {
+    plans, records, equipmentOptionsMap, dataLoading, loadError,
+    recordWorkout, recordRest, pendingRecordCount, retryPendingRecords
+  } = useWorkoutData()
 
   const [selectedRecordDay, setSelectedRecordDay] = useState(todayDayStr)
   const [sessionStatus, setSessionStatus] = useState<'idle' | 'active'>('idle')
@@ -174,6 +177,15 @@ export default function WorkoutRecordScreen() {
             <Text style={styles.todayLabel}>TODAY</Text>
             <Text style={styles.todayDate}>{todayDateStr} <Text style={styles.todayDay}>({todayDayStr})</Text></Text>
           </View>
+
+          {pendingRecordCount > 0 && (
+            <TouchableOpacity style={styles.offlineBanner} onPress={retryPendingRecords}>
+              <CloudOff size={16} color="#92400e" />
+              <Text style={styles.offlineBannerText}>
+                未送信の記録が{pendingRecordCount}件あります。タップで再送信
+              </Text>
+            </TouchableOpacity>
+          )}
 
           <View style={styles.dayTabsWrap}>
             <DayTabs selectedDay={selectedRecordDay} onSelect={setSelectedRecordDay} />
@@ -351,6 +363,9 @@ const styles = StyleSheet.create({
   todayDay: { fontSize: 18, color: '#9ca3af', fontWeight: '700' },
 
   dayTabsWrap: { marginBottom: 20 },
+
+  offlineBanner: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#fef3c7', borderWidth: 1, borderColor: '#fde68a', borderRadius: 14, padding: 12, marginBottom: 16, width: '100%' },
+  offlineBannerText: { flex: 1, fontSize: 11, fontWeight: '700', color: '#92400e' },
 
   planCard: { backgroundColor: '#fff', borderRadius: 24, padding: 24, borderWidth: 1, borderColor: '#f3f4f6', alignItems: 'center' },
   planCardLabel: { color: '#6b7280', fontWeight: '500', marginBottom: 4 },
