@@ -1,4 +1,5 @@
 import type { WorkoutRecord } from '../types'
+import { setAmount } from './exerciseStats'
 
 export type PeriodMode = 'month' | 'year'
 
@@ -15,7 +16,6 @@ export interface PeriodStats {
   completedSets: number
   totalRepsOrSeconds: number
   consistencyRate: number
-  planBreakdown: { name: string; count: number; pct: number }[]
 }
 
 export const computeStats = (records: WorkoutRecord[]): PeriodStats => {
@@ -23,31 +23,22 @@ export const computeStats = (records: WorkoutRecord[]): PeriodStats => {
   const restDays = records.length - workouts.length
   let completedSets = 0
   let totalRepsOrSeconds = 0
-  const planCount: Record<string, number> = {}
 
   workouts.forEach(record => {
-    if (record.category) planCount[record.category] = (planCount[record.category] ?? 0) + 1
     record.exercises.forEach(ex => {
       ex.sets.filter(s => s.completed).forEach(set => {
         completedSets++
-        totalRepsOrSeconds += ex.type === 'tabata'
-          ? (set.tabataWork ?? 0) * (set.tabataCycles ?? 0)
-          : Number(set.reps) || 0
+        totalRepsOrSeconds += setAmount(ex.type, set)
       })
     })
   })
-
-  const planBreakdown = Object.entries(planCount)
-    .map(([name, count]) => ({ name, count, pct: Math.round((count / workouts.length) * 100) }))
-    .sort((a, b) => b.count - a.count)
 
   return {
     workoutDays: workouts.length,
     restDays,
     completedSets,
     totalRepsOrSeconds,
-    consistencyRate: records.length > 0 ? Math.round((workouts.length / records.length) * 100) : 0,
-    planBreakdown
+    consistencyRate: records.length > 0 ? Math.round((workouts.length / records.length) * 100) : 0
   }
 }
 

@@ -12,8 +12,16 @@ vi.mock('../lib/supabase', () => import('./__mocks__/supabase'))
 import FitTrack from '../components/FitTrack'
 import { computeStats, monthCalendarCells } from '../lib/stats'
 import { expandStretches, recommendPlanId } from '../lib/plans'
+import { exerciseHistory, summarizeExercises } from '../lib/exerciseStats'
 import { initialWorkoutPlans } from './fixtures/plans'
-import type { WorkoutRecord } from '../types'
+import type { SessionExercise, SetData, WorkoutRecord } from '../types'
+
+const set = (reps: number, weight = 0, completed = true): SetData => ({ setNumber: 1, reps, weight, completed })
+const sessionEx = (name: string, sets: SetData[], over: Partial<SessionExercise> = {}): SessionExercise => ({
+  id: `ex-${name}`, name, type: 'normal', targetSets: sets.length, defaultReps: 10, defaultWeight: 0, interval: 60,
+  equipmentType: 'tube', inherited: false, options: [{ label: 'ー', weight: 0 }, { label: '赤 (+9kg)', weight: 9 }],
+  sets, ...over
+})
 
 beforeEach(() => {
   resetMockDB()
@@ -200,6 +208,35 @@ describe('記録タブ（履歴＋分析の統合）', () => {
     await waitFor(() => expect(screen.getByText('記録一覧')).toBeInTheDocument())
     expect(screen.getByText('活動カレンダー')).toBeInTheDocument()
     expect(screen.getByText('休養日')).toBeInTheDocument()
+    expect(screen.queryByText('プラン別の実施回数')).not.toBeInTheDocument()
+  })
+
+  it('種目別の記録から、別プランで実施した同じ種目の推移・自己ベストを見られる', async () => {
+    const now = new Date()
+    const at = (daysAgo: number) => new Date(now.getFullYear(), now.getMonth(), now.getDate() - daysAgo, 12).toISOString()
+    getMockRecords().push(
+      { id: 1, user_id: TEST_USER_ID, full_date: at(2), date: 'd1', day: '月', type: 'workout', category: 'プランA',
+        exercises: [sessionEx('懸垂', [set(8), set(6)])] },
+      { id: 2, user_id: TEST_USER_ID, full_date: at(0), date: 'd2', day: '水', type: 'workout', category: 'プランB',
+        exercises: [sessionEx('懸垂', [set(10, 9), set(7, 9), set(5, 9, false)])] }
+    )
+    await renderAndWaitLoad()
+    fireEvent.click(screen.getByText('記録'))
+    await waitFor(() => expect(screen.getByText('種目別の記録')).toBeInTheDocument())
+
+    // プランではなく種目で集計される（2つのプランの実施が「懸垂」1行にまとまる）
+    fireEvent.click(screen.getByRole('button', { name: /懸垂.*2回 · 4セット · 計31回/ }))
+    const modal = await screen.findByText('これまで 2 回実施')
+    const dialog = modal.closest('div.relative') as HTMLElement
+    expect(within(dialog).getByText('自己ベスト')).toBeInTheDocument()
+    expect(within(dialog).getByText('赤 (+9kg)')).toBeInTheDocument() // 最大負荷
+    expect(within(dialog).getByText(/× 10回.*赤 \(\+9kg\) × 7回$/)).toBeInTheDocument()
+
+    // 履歴の1回をタップすると、そのワークアウトの詳細へ。種目名から種目詳細へ戻れる
+    fireEvent.click(within(dialog).getByText('d1 (月)'))
+    expect(await screen.findByText('プランA')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '懸垂' }))
+    expect(await screen.findByText('これまで 2 回実施')).toBeInTheDocument()
   })
 })
 
@@ -208,14 +245,35 @@ describe('集計ロジック（純粋関数）', () => {
     id: 1, date: '1/1', fullDate: '2026-01-01T00:00:00Z', day: '木', type: 'workout', exercises: [], ...over
   })
 
-  it('computeStats はプラン別回数と実行率を返す', () => {
+  it('computeStats は日数・セット数・実行率を返す', () => {
     const s = computeStats([
-      rec({ category: 'A' }), rec({ category: 'A' }), rec({ category: 'B' }), rec({ type: 'rest' })
+      rec({ exercises: [sessionEx('懸垂', [set(8), set(6, 0, false)])] }), rec({}), rec({}), rec({ type: 'rest' })
     ])
     expect(s.workoutDays).toBe(3)
     expect(s.restDays).toBe(1)
     expect(s.consistencyRate).toBe(75)
-    expect(s.planBreakdown[0]).toEqual({ name: 'A', count: 2, pct: 67 })
+    expect(s.completedSets).toBe(1)
+    expect(s.totalRepsOrSeconds).toBe(8)
+  })
+
+  it('summarizeExercises はプランに関係なく種目名で集計する（未完了セット・未実施の種目は除外）', () => {
+    const out = summarizeExercises([
+      rec({ id: 1, category: 'A', fullDate: '2026-10-01T00:00:00Z', exercises: [sessionEx('懸垂', [set(8, 9)]), sessionEx('腕立て', [set(20, 0, false)])] }),
+      rec({ id: 2, category: 'B', fullDate: '2026-10-03T00:00:00Z', exercises: [sessionEx(' 懸垂 ', [set(10), set(6, 0, false)])] }),
+      rec({ id: 3, type: 'rest' })
+    ])
+    expect(out).toHaveLength(1)
+    expect(out[0]).toMatchObject({ name: '懸垂', sessions: 2, completedSets: 2, amount: 18, bestAmount: 10, maxWeight: 9, lastDate: '2026-10-03T00:00:00Z' })
+  })
+
+  it('exerciseHistory は新しい順で、負荷・1セット最大の更新に自己ベストを付ける（補助は負値）', () => {
+    const h = exerciseHistory([
+      rec({ id: 3, fullDate: '2026-10-05T00:00:00Z', exercises: [sessionEx('懸垂', [set(9, -9)])] }),
+      rec({ id: 2, fullDate: '2026-10-03T00:00:00Z', exercises: [sessionEx('懸垂', [set(9, -28)])] }),
+      rec({ id: 1, fullDate: '2026-10-01T00:00:00Z', exercises: [sessionEx('懸垂', [set(10, -28)])] })
+    ], '懸垂')
+    expect(h.map(x => x.recordId)).toEqual([3, 2, 1])
+    expect(h.map(x => [x.prWeight, x.prAmount])).toEqual([[true, false], [false, false], [false, false]])
   })
 
   it('monthCalendarCells は日曜始まりで7の倍数のマスを返す', () => {
