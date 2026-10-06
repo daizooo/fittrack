@@ -1,5 +1,15 @@
 # Androidの前面サービス（タイマー精度）設計
 
+> [!IMPORTANT]
+> **凍結中（2026-10-06〜）: mobile/（Androidネイティブ版）の開発は一旦止め、PWA版（`src/`）で運用する。**
+> PWA版の運用で課題が出たら（例: 画面オフ・バックグラウンドでTabataタイマーがずれる／止まる、
+> 音が鳴らない など、PWAでは解決できないもの）再始動する。それまでは mobile/ に機能追加・修正をしない。
+>
+> 再始動するときの注意: 凍結時点の mobile/ は旧データモデルのまま。PWA版はその後、
+> 曜日別 `plans` → 自由作成の `workout_plans`（migration 003）へ移り、記録・分析も
+> プラン単位から種目単位に変わっている。再始動時はまずこれに追従させること
+> （`plans` テーブルは mobile/ のためだけに残している）。
+
 `native-app-rewrite.md` フェーズ1の「タイマーだけネイティブで正確に回る」を実現する
 ための詳細設計。JS側の記録画面・タイマーUI（`mobile/src/components/WorkoutRecordScreen.tsx`,
 `mobile/src/hooks/useWorkoutTimer.ts`）は実装済み。ここではそれをアプリが
