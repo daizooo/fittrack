@@ -38,10 +38,22 @@ export interface Exercise {
   supersetGroup?: string          // exercises sharing the same non-empty value are performed as a superset
 }
 
+/** ワークアウト前後のストレッチ1項目 */
+export interface Stretch {
+  id: string
+  name: string
+  seconds: number                 // 1回（片側）あたりの秒数
+  bilateral?: boolean             // true = 左右それぞれ実施（セッションでは左・右の2行に展開）
+}
+
+/** ユーザーが自由に作成するワークアウトプラン（曜日には紐付かない） */
 export interface WorkoutPlan {
-  day: string
-  category: string
+  id: string
+  name: string
   exercises: Exercise[]
+  warmup: Stretch[]
+  cooldown: Stretch[]
+  sortOrder: number
 }
 
 export interface SetData {
@@ -60,14 +72,29 @@ export interface SessionExercise extends Exercise {
   sets: SetData[]
 }
 
+export type StretchPhase = 'warmup' | 'cooldown'
+
+export interface SessionStretch {
+  id: string
+  name: string                    // 左右展開済みの表示名（例: 「ハムストリング（左）」）
+  seconds: number
+  completed: boolean
+}
+
+export interface SessionStretches {
+  warmup: SessionStretch[]
+  cooldown: SessionStretch[]
+}
+
 export interface WorkoutRecord {
   id: number
   date: string
   fullDate: string
   day: string
-  category?: string
+  category?: string               // 実施したプラン名
   type: RecordType
   exercises: SessionExercise[]
+  stretches?: SessionStretches | null
 }
 
 export interface TimerState {
@@ -82,6 +109,7 @@ export interface TimerState {
   tabataRest: number
   tabataCycles: number
   currentCycle: number
+  stretch: { phase: StretchPhase; idx: number; chain: boolean } | null
 }
 
 export interface SessionData {
@@ -90,14 +118,13 @@ export interface SessionData {
   day: string
   category: string
   exercises: SessionExercise[]
+  stretches: SessionStretches
 }
 
 export interface Profile {
   height: number | null
   birth_date: string | null    // YYYY-MM-DD
   gender: 'male' | 'female' | null
-  goals: string[]
-  schedule: Record<string, { enabled: boolean; minutes: number }>
 }
 
 export interface BodyLog {

@@ -3,7 +3,7 @@
  */
 import { describe, it, expect } from 'vitest'
 import { generateEquipmentOptions, DEFAULT_LOAD_EQUIPMENT } from '../lib/equipmentUtils'
-import { ssExerciseLeft, ssExerciseRight, sundayPlan } from './fixtures/plans'
+import { ssExerciseLeft, ssExerciseRight, lowerBodyPlan } from './fixtures/plans'
 
 describe('ウェイトベスト機材', () => {
   const vestEquipment = DEFAULT_LOAD_EQUIPMENT.find(e => e.id === 'vest')!
@@ -35,9 +35,9 @@ describe('ウェイトベスト機材', () => {
   })
 })
 
-describe('日曜日プラン – ブルガリアンSS種目', () => {
-  it('日曜プランにSSが2種目含まれる', () => {
-    const ssExercises = sundayPlan.exercises.filter(e => e.name.includes('ブルガリアンSS'))
+describe('下半身プラン – ブルガリアンSS種目', () => {
+  it('下半身プランにSSが2種目含まれる', () => {
+    const ssExercises = lowerBodyPlan.exercises.filter(e => e.name.includes('ブルガリアンSS'))
     expect(ssExercises).toHaveLength(2)
   })
 
@@ -60,8 +60,8 @@ describe('日曜日プラン – ブルガリアンSS種目', () => {
   })
 
   it('SS種目のインターバルは180秒（他より長い）', () => {
-    const ssExercises = sundayPlan.exercises.filter(e => e.name.includes('ブルガリアンSS'))
-    const otherExercises = sundayPlan.exercises.filter(e => !e.name.includes('ブルガリアンSS'))
+    const ssExercises = lowerBodyPlan.exercises.filter(e => e.name.includes('ブルガリアンSS'))
+    const otherExercises = lowerBodyPlan.exercises.filter(e => !e.name.includes('ブルガリアンSS'))
     ssExercises.forEach(ex => {
       expect(ex.interval).toBe(180)
     })

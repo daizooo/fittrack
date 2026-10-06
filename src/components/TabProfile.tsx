@@ -1,24 +1,18 @@
 import React, { useState, useEffect } from 'react'
 import {
   Plus, Trash2, Save, Download, AlertTriangle, X,
-  ChevronDown, ChevronUp, User, Weight, Dumbbell
+  ChevronDown, ChevronUp, User, Weight, Dumbbell, Edit3, Check
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { generateEquipmentOptions } from '../lib/equipmentUtils'
+import { calcAge, localISODate } from '../lib/dates'
 import type {
   EquipmentItem, EquipmentWeightConfig, Profile, BodyLog, WorkoutPlan, WorkoutRecord
 } from '../types'
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
-const GOAL_OPTIONS = ['筋肥大', '筋力向上', 'VO₂MAX向上', '体脂肪減少']
-const DAYS = ['月', '火', '水', '木', '金', '土', '日']
-
-const DEFAULT_SCHEDULE = Object.fromEntries(
-  DAYS.map(d => [d, { enabled: false, minutes: 60 }])
-)
-
-const todayISODate = () => new Date().toISOString().split('T')[0]
+const todayISODate = () => localISODate()
 
 // ─── Section wrapper ──────────────────────────────────────────────────────────
 
@@ -64,21 +58,28 @@ export default function TabProfile({
   bodyLogs, setBodyLogs, plans, records
 }: TabProfileProps) {
 
-  // ── Physical info state ──────────────────────────────────────────────────────
+  // ── Physical info (登録済みの値を表示。修正時のみ編集フォームを開く) ────────────
+  const [physicalEditing, setPhysicalEditing] = useState(false)
   const [birthDate, setBirthDate] = useState(profile?.birth_date ?? '')
   const [gender, setGender] = useState<'male' | 'female' | ''>(profile?.gender ?? '')
   const [height, setHeight] = useState(profile?.height?.toString() ?? '')
   const [physicalSaving, setPhysicalSaving] = useState(false)
+  const [physicalError, setPhysicalError] = useState<string | null>(null)
+  const [physicalSaved, setPhysicalSaved] = useState(false)
 
-  // Sync when profile loads
   useEffect(() => {
-    if (!profile) return
-    setBirthDate(profile.birth_date ?? '')
-    setGender(profile.gender ?? '')
-    setHeight(profile.height?.toString() ?? '')
-    setGoals(profile.goals ?? [])
-    setSchedule({ ...DEFAULT_SCHEDULE, ...profile.schedule })
-  }, [profile])
+    if (!physicalSaved) return
+    const t = setTimeout(() => setPhysicalSaved(false), 2500)
+    return () => clearTimeout(t)
+  }, [physicalSaved])
+
+  const startPhysicalEdit = () => {
+    setBirthDate(profile?.birth_date ?? '')
+    setGender(profile?.gender ?? '')
+    setHeight(profile?.height?.toString() ?? '')
+    setPhysicalError(null)
+    setPhysicalEditing(true)
+  }
 
   // ── Body log state ───────────────────────────────────────────────────────────
   const [logDate, setLogDate] = useState(todayISODate())
@@ -105,38 +106,26 @@ export default function TabProfile({
     id: string; name: string; affected: string[]
   } | null>(null)
 
-  // ── Goals & schedule ──────────────────────────────────────────────────────────
-  const [goals, setGoals] = useState<string[]>(profile?.goals ?? [])
-  const [schedule, setSchedule] = useState<Record<string, { enabled: boolean; minutes: number }>>(
-    { ...DEFAULT_SCHEDULE, ...profile?.schedule }
-  )
-  const [goalsSaving, setGoalsSaving] = useState(false)
-
   // ── Export ────────────────────────────────────────────────────────────────────
   const [exportPeriod, setExportPeriod] = useState<3 | 6>(3)
 
   // ── Save physical info ───────────────────────────────────────────────────────
 
   const savePhysical = async () => {
+    if (!birthDate || !gender || !height) { setPhysicalError('すべての項目を入力してください'); return }
     setPhysicalSaving(true)
-    const newProfile: Profile = {
-      height: height ? Number(height) : null,
-      birth_date: birthDate || null,
-      gender: (gender as 'male' | 'female') || null,
-      goals: profile?.goals ?? [],
-      schedule: profile?.schedule ?? DEFAULT_SCHEDULE
-    }
-    const { error } = await supabase.from('profiles').upsert({
-      user_id: userId,
-      height: newProfile.height,
-      birth_date: newProfile.birth_date,
-      gender: newProfile.gender,
-      goals: newProfile.goals,
-      schedule: newProfile.schedule
-    })
-    if (!error) setProfile(newProfile)
-    else console.error('Failed to save profile:', error)
+    setPhysicalError(null)
+    const newProfile: Profile = { height: Number(height), birth_date: birthDate, gender }
+    const { error } = await supabase.from('profiles').upsert({ user_id: userId, ...newProfile })
     setPhysicalSaving(false)
+    if (error) {
+      console.error('Failed to save profile:', error)
+      setPhysicalError(`保存に失敗しました: ${error.message}`)
+      return
+    }
+    setProfile(newProfile)
+    setPhysicalEditing(false)
+    setPhysicalSaved(true)
   }
 
   // ── Add body log ─────────────────────────────────────────────────────────────
@@ -275,7 +264,7 @@ export default function TabProfile({
     plans.forEach(plan => {
       plan.exercises.forEach(ex => {
         if (ex.equipmentType === equipId) {
-          affected.push(`${plan.day}曜: ${ex.name}`)
+          affected.push(`${plan.name}: ${ex.name}`)
         }
       })
     })
@@ -291,30 +280,6 @@ export default function TabProfile({
     if (!error) setEquipment(prev => prev.filter(e => e.id !== equipId))
     else console.error('Failed to delete equipment:', error)
     setDeleteConfirm(null)
-  }
-
-  // ── Save goals & schedule ────────────────────────────────────────────────────
-
-  const saveGoalsSchedule = async () => {
-    setGoalsSaving(true)
-    const newProfile: Profile = {
-      height: profile?.height ?? null,
-      birth_date: profile?.birth_date ?? null,
-      gender: profile?.gender ?? null,
-      goals,
-      schedule
-    }
-    const { error } = await supabase.from('profiles').upsert({
-      user_id: userId,
-      height: newProfile.height,
-      birth_date: newProfile.birth_date,
-      gender: newProfile.gender,
-      goals,
-      schedule
-    })
-    if (!error) setProfile(newProfile)
-    else console.error('Failed to save goals:', error)
-    setGoalsSaving(false)
   }
 
   // ── Export ────────────────────────────────────────────────────────────────────
@@ -333,10 +298,9 @@ export default function TabProfile({
       profile: {
         height: profile?.height ?? null,
         birth_date: profile?.birth_date ?? null,
-        gender: profile?.gender ?? null,
-        goals: profile?.goals ?? [],
-        schedule: profile?.schedule ?? {}
+        gender: profile?.gender ?? null
       },
+      plans: plans.map(p => ({ name: p.name, warmup: p.warmup, exercises: p.exercises, cooldown: p.cooldown })),
       equipment: {
         load: equipment.filter(e => e.category === 'load').map(e => ({
           id: e.id, name: e.name, direction: e.direction,
@@ -366,6 +330,7 @@ export default function TabProfile({
   const loadEquipment = equipment.filter(e => e.category === 'load')
   const dataEquipment = equipment.filter(e => e.category === 'data')
   const recentBodyLogs = bodyLogs.slice(0, 20)
+  const latestWeight = bodyLogs.find(l => l.weight != null)?.weight ?? null
 
   // ── Render ───────────────────────────────────────────────────────────────────
 
@@ -375,46 +340,85 @@ export default function TabProfile({
       {/* ── 身体情報 ──────────────────────────────────────────────────────────── */}
       <Section title="身体情報" icon={<User size={18} className="text-blue-500" />}>
         <div className="pt-4 space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="text-[11px] font-bold text-gray-500 block mb-1">生年月日</label>
-              <input
-                type="date" value={birthDate}
-                onChange={e => setBirthDate(e.target.value)}
-                className="w-full bg-gray-50 border border-gray-200 rounded-xl p-2.5 text-sm font-bold outline-none focus:border-blue-400"
-              />
+          {physicalSaved && (
+            <div className="p-2.5 bg-green-50 border border-green-200 rounded-xl text-xs font-bold text-green-700 flex items-center gap-1.5">
+              <Check size={14} />身体情報を更新しました
             </div>
-            <div>
-              <label className="text-[11px] font-bold text-gray-500 block mb-1">性別</label>
-              <div className="flex gap-2 mt-1">
-                {(['male', 'female'] as const).map(g => (
-                  <button
-                    key={g}
-                    onClick={() => setGender(prev => prev === g ? '' : g)}
-                    className={`flex-1 py-2.5 rounded-xl text-sm font-bold border transition-colors ${gender === g ? 'bg-blue-600 text-white border-blue-600' : 'bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100'}`}
-                  >
-                    {g === 'male' ? '男' : '女'}
-                  </button>
-                ))}
+          )}
+          {!physicalEditing ? (
+            <>
+              <div className="grid grid-cols-3 gap-2 text-center">
+                <div className="bg-gray-50 rounded-xl p-3">
+                  <div className="text-[10px] font-bold text-gray-400">年齢</div>
+                  <div className="text-lg font-black text-gray-800">{profile?.birth_date ? calcAge(profile.birth_date) : '—'}<span className="text-xs font-bold text-gray-400 ml-0.5">歳</span></div>
+                </div>
+                <div className="bg-gray-50 rounded-xl p-3">
+                  <div className="text-[10px] font-bold text-gray-400">性別</div>
+                  <div className="text-lg font-black text-gray-800">{profile?.gender === 'male' ? '男性' : profile?.gender === 'female' ? '女性' : '—'}</div>
+                </div>
+                <div className="bg-gray-50 rounded-xl p-3">
+                  <div className="text-[10px] font-bold text-gray-400">身長</div>
+                  <div className="text-lg font-black text-gray-800">{profile?.height ?? '—'}<span className="text-xs font-bold text-gray-400 ml-0.5">cm</span></div>
+                </div>
               </div>
-            </div>
-          </div>
-
-          <div>
-            <label className="text-[11px] font-bold text-gray-500 block mb-1">身長 (cm)</label>
-            <input
-              type="number" value={height} placeholder="170"
-              onChange={e => setHeight(e.target.value)}
-              className="w-1/2 bg-gray-50 border border-gray-200 rounded-xl p-2.5 text-sm font-bold outline-none focus:border-blue-400 text-center"
-            />
-          </div>
-
-          <button
-            onClick={savePhysical} disabled={physicalSaving}
-            className="w-full py-3 bg-blue-600 text-white font-bold rounded-xl flex items-center justify-center gap-2 shadow-sm active:scale-95 transition-transform disabled:opacity-60"
-          >
-            <Save size={16} />{physicalSaving ? '保存中...' : '身体情報を保存'}
-          </button>
+              {latestWeight != null && profile?.height && (
+                <p className="text-xs text-gray-500 text-center">
+                  最新体重 <span className="font-bold text-gray-800">{latestWeight}kg</span>
+                  ・BMI <span className="font-bold text-gray-800">{(latestWeight / ((profile.height / 100) ** 2)).toFixed(1)}</span>
+                </p>
+              )}
+              <button onClick={startPhysicalEdit} className="w-full py-2 text-xs font-bold text-gray-500 flex items-center justify-center gap-1 hover:text-gray-700">
+                <Edit3 size={12} />登録内容を修正
+              </button>
+            </>
+          ) : (
+            <>
+              {physicalError && (
+                <div role="alert" className="p-2.5 bg-red-50 border border-red-200 rounded-xl text-xs text-red-600">{physicalError}</div>
+              )}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-[11px] font-bold text-gray-500 block mb-1">生年月日</label>
+                  <input
+                    type="date" value={birthDate}
+                    onChange={e => setBirthDate(e.target.value)}
+                    className="w-full bg-gray-50 border border-gray-200 rounded-xl p-2.5 text-sm font-bold outline-none focus:border-blue-400"
+                  />
+                </div>
+                <div>
+                  <label className="text-[11px] font-bold text-gray-500 block mb-1">性別</label>
+                  <div className="flex gap-2 mt-1">
+                    {(['male', 'female'] as const).map(g => (
+                      <button
+                        key={g}
+                        onClick={() => setGender(g)}
+                        className={`flex-1 py-2.5 rounded-xl text-sm font-bold border transition-colors ${gender === g ? 'bg-blue-600 text-white border-blue-600' : 'bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100'}`}
+                      >
+                        {g === 'male' ? '男' : '女'}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+              <div>
+                <label className="text-[11px] font-bold text-gray-500 block mb-1">身長 (cm)</label>
+                <input
+                  type="number" inputMode="decimal" value={height} placeholder="170"
+                  onChange={e => setHeight(e.target.value)}
+                  className="w-1/2 bg-gray-50 border border-gray-200 rounded-xl p-2.5 text-sm font-bold outline-none focus:border-blue-400 text-center"
+                />
+              </div>
+              <div className="flex gap-2">
+                <button onClick={() => setPhysicalEditing(false)} className="flex-1 py-3 bg-gray-100 text-gray-700 font-bold rounded-xl active:scale-95">キャンセル</button>
+                <button
+                  onClick={savePhysical} disabled={physicalSaving}
+                  className="flex-1 py-3 bg-blue-600 text-white font-bold rounded-xl flex items-center justify-center gap-2 shadow-sm active:scale-95 transition-transform disabled:opacity-60"
+                >
+                  <Save size={16} />{physicalSaving ? '保存中...' : '保存'}
+                </button>
+              </div>
+            </>
+          )}
         </div>
       </Section>
 
@@ -664,73 +668,12 @@ export default function TabProfile({
               />
               <button
                 onClick={submitDataEquipment} disabled={!newDataName.trim()}
-                className="px-4 py-2.5 bg-gray-800 text-white text-sm font-bold rounded-xl flex items-center gap-1 active:scale-95 transition-transform disabled:opacity-40"
+                className="px-4 py-2.5 bg-gray-800 text-white text-sm font-bold rounded-xl flex items-center gap-1 flex-shrink-0 whitespace-nowrap active:scale-95 transition-transform disabled:opacity-40"
               >
                 <Plus size={14} /> 追加
               </button>
             </div>
           </div>
-        </div>
-      </Section>
-
-      {/* ── 目標・スケジュール ─────────────────────────────────────────────────── */}
-      <Section title="目標・スケジュール" icon={<span className="text-orange-500 text-base">🎯</span>}>
-        <div className="pt-4 space-y-5">
-
-          {/* Goals */}
-          <div>
-            <p className="text-[11px] font-bold text-gray-500 mb-2">主目標（複数選択可）</p>
-            <div className="grid grid-cols-2 gap-2">
-              {GOAL_OPTIONS.map(g => (
-                <button
-                  key={g}
-                  onClick={() => setGoals(prev => prev.includes(g) ? prev.filter(x => x !== g) : [...prev, g])}
-                  className={`py-3 px-3 rounded-xl text-sm font-bold border transition-colors text-left flex items-center gap-2 ${goals.includes(g) ? 'bg-orange-500 text-white border-orange-500' : 'bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100'}`}
-                >
-                  <span className={`w-4 h-4 rounded flex items-center justify-center flex-shrink-0 border ${goals.includes(g) ? 'bg-white/30 border-white/50' : 'border-gray-300'}`}>
-                    {goals.includes(g) && <span className="text-white text-[10px]">✓</span>}
-                  </span>
-                  {g}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Schedule */}
-          <div>
-            <p className="text-[11px] font-bold text-gray-500 mb-2">曜日別スケジュール</p>
-            <div className="space-y-1.5">
-              {DAYS.map(day => {
-                const s = schedule[day] ?? { enabled: false, minutes: 60 }
-                return (
-                  <div key={day} className="flex items-center gap-3 bg-gray-50 rounded-xl px-3 py-2">
-                    <button
-                      onClick={() => setSchedule(prev => ({ ...prev, [day]: { ...s, enabled: !s.enabled } }))}
-                      className={`w-9 h-5 rounded-full transition-colors flex-shrink-0 relative ${s.enabled ? 'bg-blue-500' : 'bg-gray-300'}`}
-                    >
-                      <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${s.enabled ? 'translate-x-4' : 'translate-x-0.5'}`} />
-                    </button>
-                    <span className={`w-5 text-sm font-black ${s.enabled ? 'text-gray-800' : 'text-gray-400'}`}>{day}</span>
-                    <div className="flex items-center gap-1.5 ml-auto">
-                      <input
-                        type="number" value={s.minutes} disabled={!s.enabled}
-                        onChange={e => setSchedule(prev => ({ ...prev, [day]: { ...s, minutes: Number(e.target.value) } }))}
-                        className="w-16 bg-white border border-gray-200 rounded-lg p-1.5 text-xs font-bold outline-none text-center disabled:opacity-40"
-                      />
-                      <span className="text-xs text-gray-500">分</span>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-
-          <button
-            onClick={saveGoalsSchedule} disabled={goalsSaving}
-            className="w-full py-3 bg-orange-500 text-white font-bold rounded-xl flex items-center justify-center gap-2 shadow-sm active:scale-95 transition-transform disabled:opacity-60"
-          >
-            <Save size={16} />{goalsSaving ? '保存中...' : '目標・スケジュールを保存'}
-          </button>
         </div>
       </Section>
 
@@ -755,7 +698,8 @@ export default function TabProfile({
           <div className="bg-gray-50 rounded-xl p-3 text-xs text-gray-500 space-y-1">
             <p>以下をJSON形式でダウンロードします：</p>
             <ul className="space-y-0.5 ml-2">
-              <li>• プロフィール（身体情報・目標・スケジュール）</li>
+              <li>• プロフィール（身体情報）</li>
+              <li>• ワークアウトプラン</li>
               <li>• 器具情報（負荷器具・データ器具）</li>
               <li>• 体重・体脂肪ログ（直近{exportPeriod}ヶ月）</li>
               <li>• トレーニング記録（直近{exportPeriod}ヶ月）</li>

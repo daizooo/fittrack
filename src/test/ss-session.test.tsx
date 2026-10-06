@@ -4,6 +4,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
 import { resetMockDB, getMockRecords, TEST_USER_ID } from './__mocks__/supabase'
+import { LOWER_PLAN_NAME } from './fixtures/plans'
 
 vi.mock('../lib/supabase', () => import('./__mocks__/supabase'))
 
@@ -11,14 +12,13 @@ import FitTrack from '../components/FitTrack'
 import { generateEquipmentOptions, DEFAULT_LOAD_EQUIPMENT } from '../lib/equipmentUtils'
 
 const vestEquipment = DEFAULT_LOAD_EQUIPMENT.find(e => e.id === 'vest')!
-const SUNDAY_DAY = '日'
 
 beforeEach(() => {
   resetMockDB()
-  // フェイクタイマーはセッション完了テストのみで使用するため
-  // ここでは実タイマーを使用
   vi.useRealTimers()
 })
+
+const setChecks = () => screen.getAllByTestId('set-check')
 
 // Helper: コンポーネントをレンダリングしデータロード完了を待つ
 async function renderAndWaitLoad() {
@@ -29,22 +29,19 @@ async function renderAndWaitLoad() {
   )
 }
 
-// Helper: 日曜セッションを開始状態にする
-async function openSundayWorkoutTab() {
+// Helper: ワークアウトタブで下半身プランを選んだ状態にする
+async function openLowerPlanWorkoutTab() {
   await renderAndWaitLoad()
-  // ワークアウトタブへ
   fireEvent.click(screen.getByText('ワークアウト'))
-  // 日曜を選択（ワークアウトタブの曜日ボタン）
-  const dayButtons = screen.getAllByRole('button', { name: SUNDAY_DAY })
-  fireEvent.click(dayButtons[dayButtons.length - 1])
+  fireEvent.click(screen.getByRole('radio', { name: new RegExp(LOWER_PLAN_NAME) }))
   await waitFor(
-    () => expect(screen.getByText('下半身＋VO₂MAX＋体幹')).toBeInTheDocument(),
+    () => expect(screen.getByText('トレーニングを開始する')).toBeInTheDocument(),
     { timeout: 3000 },
   )
 }
 
-async function startSundaySession() {
-  await openSundayWorkoutTab()
+async function startLowerPlanSession() {
+  await openLowerPlanWorkoutTab()
   fireEvent.click(screen.getByText('トレーニングを開始する'))
   await waitFor(
     () => expect(screen.getByText('ブルガリアンSS（左）')).toBeInTheDocument(),
@@ -52,77 +49,70 @@ async function startSundaySession() {
   )
 }
 
+async function openLowerPlanDetail() {
+  await renderAndWaitLoad()
+  fireEvent.click(screen.getByText('プラン'))
+  fireEvent.click(screen.getByText(LOWER_PLAN_NAME))
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('FitTrack – SS プランタブ表示', () => {
-  it('日曜メニューにブルガリアンSSが2種目表示される', async () => {
-    await renderAndWaitLoad()
-
-    const dayButtons = screen.getAllByRole('button', { name: SUNDAY_DAY })
-    fireEvent.click(dayButtons[0])
-
+  it('下半身プランにブルガリアンSSが2種目表示される', async () => {
+    await openLowerPlanDetail()
     await waitFor(() => {
       expect(screen.getByText('ブルガリアンSS（左）')).toBeInTheDocument()
       expect(screen.getByText('ブルガリアンSS（右）')).toBeInTheDocument()
     }, { timeout: 3000 })
   })
 
-  it('日曜カテゴリは「下半身＋VO₂MAX＋体幹」', async () => {
-    await renderAndWaitLoad()
-
-    const dayButtons = screen.getAllByRole('button', { name: SUNDAY_DAY })
-    fireEvent.click(dayButtons[0])
-
+  it('プラン詳細の見出しはプラン名', async () => {
+    await openLowerPlanDetail()
     await waitFor(
-      () => expect(screen.getByText('下半身＋VO₂MAX＋体幹')).toBeInTheDocument(),
+      () => expect(screen.getByRole('heading', { name: LOWER_PLAN_NAME })).toBeInTheDocument(),
       { timeout: 3000 },
     )
   })
 
   it('SS種目のインターバル表示（180s）が確認できる', async () => {
-    await renderAndWaitLoad()
-
-    const dayButtons = screen.getAllByRole('button', { name: SUNDAY_DAY })
-    fireEvent.click(dayButtons[0])
-
+    await openLowerPlanDetail()
     await waitFor(
       () => expect(screen.getByText('ブルガリアンSS（左）')).toBeInTheDocument(),
       { timeout: 3000 },
     )
     // インターバルタグ "180s" が複数ある（左右それぞれ）
-    const intervalBadges = screen.getAllByText('180s')
-    expect(intervalBadges.length).toBeGreaterThanOrEqual(2)
+    expect(screen.getAllByText('180s').length).toBeGreaterThanOrEqual(2)
   })
 })
 
 describe('FitTrack – SS ワークアウト開始', () => {
-  it('日曜セッション開始ボタンが表示される', async () => {
-    await openSundayWorkoutTab()
+  it('下半身プラン選択で開始ボタンが表示される', async () => {
+    await openLowerPlanWorkoutTab()
     expect(screen.getByText('トレーニングを開始する')).toBeInTheDocument()
   })
 
   it('セッション開始でSS左右種目が表示される', async () => {
-    await startSundaySession()
+    await startLowerPlanSession()
     expect(screen.getByText('ブルガリアンSS（左）')).toBeInTheDocument()
     expect(screen.getByText('ブルガリアンSS（右）')).toBeInTheDocument()
   })
 
   it('SS各種目に「4 Sets」バッジが表示される', async () => {
-    await startSundaySession()
+    await startLowerPlanSession()
     const setBadges = screen.getAllByText('4 Sets')
     // SS左右それぞれ4セット
     expect(setBadges.length).toBeGreaterThanOrEqual(2)
   })
 
   it('前回引継バッジは初回セッションでは表示されない', async () => {
-    await startSundaySession()
+    await startLowerPlanSession()
     expect(screen.queryByText('前回引継')).not.toBeInTheDocument()
   })
 })
 
 describe('FitTrack – SS セット完了・重量操作', () => {
   it('負荷セレクタにベストの重量オプション(+5.25kg)が存在する', async () => {
-    await startSundaySession()
+    await startLowerPlanSession()
 
     const selects = document.querySelectorAll('select')
     const vestSelects = Array.from(selects).filter(s =>
@@ -132,7 +122,7 @@ describe('FitTrack – SS セット完了・重量操作', () => {
   })
 
   it('SSのデフォルト重量が5.25kg（ベスト1段階目）', async () => {
-    await startSundaySession()
+    await startLowerPlanSession()
 
     const selects = document.querySelectorAll('select')
     const vestSelects = Array.from(selects).filter(s =>
@@ -142,9 +132,9 @@ describe('FitTrack – SS セット完了・重量操作', () => {
   })
 
   it('完了ボタン押下でグリーンのボタンが出現する', async () => {
-    await startSundaySession()
+    await startLowerPlanSession()
 
-    const firstCheck = document.querySelectorAll('button[class*="w-12"]')[0] as HTMLElement
+    const firstCheck = setChecks()[0]
     await act(async () => {
       fireEvent.click(firstCheck)
     })
@@ -160,10 +150,10 @@ describe('FitTrack – SS セット完了・重量操作', () => {
   })
 
   it('完了後はCheckCircleアイコンが緑に切り替わる', async () => {
-    await startSundaySession()
+    await startLowerPlanSession()
 
     await act(async () => {
-      fireEvent.click(document.querySelectorAll('button[class*="w-12"]')[0])
+      fireEvent.click(setChecks()[0])
     })
 
     await waitFor(
@@ -176,10 +166,10 @@ describe('FitTrack – SS セット完了・重量操作', () => {
   })
 
   it('左（1セット目）完了だけではレストが始まらない', async () => {
-    await startSundaySession()
+    await startLowerPlanSession()
 
     // 最初のチェックボタン = ブルガリアンSS（左）の1セット目
-    const checkButtons = document.querySelectorAll('button[class*="w-12"]')
+    const checkButtons = setChecks()
     await act(async () => {
       fireEvent.click(checkButtons[0])
     })
@@ -190,15 +180,15 @@ describe('FitTrack – SS セット完了・重量操作', () => {
   })
 
   it('左右とも1セット目を完了するとレストが始まる', async () => {
-    await startSundaySession()
+    await startLowerPlanSession()
 
     // ブルガリアンSS（左）の4セット分、続けて（右）の4セット分のチェックボタンが並ぶ
     await act(async () => {
-      fireEvent.click(document.querySelectorAll('button[class*="w-12"]')[0]) // 左 1セット目
+      fireEvent.click(setChecks()[0]) // 左 1セット目
     })
     await act(async () => {
       // 左の完了で行が再レンダリングされるため、都度DOMを再取得する
-      fireEvent.click(document.querySelectorAll('button[class*="w-12"]')[4]) // 右 1セット目（左が4セット分なのでindex4から）
+      fireEvent.click(setChecks()[4]) // 右 1セット目（左が4セット分なのでindex4から）
     })
 
     await waitFor(
@@ -210,10 +200,10 @@ describe('FitTrack – SS セット完了・重量操作', () => {
 
 describe('FitTrack – SS セッション保存', () => {
   it('「完了して保存」でrecordsにSSデータが記録される', async () => {
-    await startSundaySession()
+    await startLowerPlanSession()
 
     // 1セット完了
-    const checkButtons = document.querySelectorAll('button[class*="w-12"]')
+    const checkButtons = setChecks()
     fireEvent.click(checkButtons[0])
 
     await act(async () => {
@@ -231,22 +221,22 @@ describe('FitTrack – SS セッション保存', () => {
     const saved = getMockRecords() as Array<Record<string, unknown>>
     const record = saved[0]
     expect(record.type).toBe('workout')
-    // session.day は「今日の曜日」が記録される（プランで選んだ曜日ではない）
+    // session.day は「今日の曜日」が記録される
     expect(typeof record.day).toBe('string')
 
     const exercises = record.exercises as Array<{ name: string; sets: Array<{ completed: boolean; weight: number }> }>
-    // 日曜プランのSS種目が記録されている
+    expect(record.category).toBe(LOWER_PLAN_NAME)
+    // 下半身プランのSS種目が記録されている
     const ssLeft = exercises.find(e => e.name === 'ブルガリアンSS（左）')
     expect(ssLeft).toBeDefined()
     expect(ssLeft!.sets[0].weight).toBe(5.25)
   })
 
   it('中止確認ダイアログが表示される', async () => {
-    await startSundaySession()
+    await startLowerPlanSession()
 
     // 戻るボタン（ChevronLeft）をクリック
-    const backButton = document.querySelector('button[class*="p-1 hover"]') as HTMLElement
-    fireEvent.click(backButton)
+    fireEvent.click(screen.getByLabelText('トレーニングを中止'))
 
     await waitFor(
       () => expect(screen.getByText('トレーニングを中止しますか？')).toBeInTheDocument(),
@@ -255,10 +245,9 @@ describe('FitTrack – SS セッション保存', () => {
   })
 
   it('中止後はワークアウト待機画面に戻る', async () => {
-    await startSundaySession()
+    await startLowerPlanSession()
 
-    const backButton = document.querySelector('button[class*="p-1 hover"]') as HTMLElement
-    fireEvent.click(backButton)
+    fireEvent.click(screen.getByLabelText('トレーニングを中止'))
 
     await waitFor(
       () => screen.getByText('中止する'),
@@ -267,7 +256,7 @@ describe('FitTrack – SS セッション保存', () => {
     fireEvent.click(screen.getByText('中止する'))
 
     await waitFor(
-      () => expect(screen.getByText('トレーニングを開始する')).toBeInTheDocument(),
+      () => expect(screen.getByText('今日のプランを選ぶ')).toBeInTheDocument(),
       { timeout: 3000 },
     )
   })
