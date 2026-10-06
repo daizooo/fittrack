@@ -30,3 +30,6 @@ Object.defineProperty(window, 'AudioContext', {
   writable: true,
   value: MockAudioContext,
 })
+
+// jsdom does not implement scrolling
+window.scrollTo = (() => {}) as typeof window.scrollTo
