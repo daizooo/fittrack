@@ -9,6 +9,8 @@ export interface ExerciseActions {
   create: (input: ExerciseInput) => Promise<ExerciseDef | string>
   update: (id: string, input: ExerciseInput) => Promise<string | null>
   remove: (id: string) => Promise<string | null>
+  /** 自作の種目 sourceId を targetId に統合する（記録・プランの参照を付け替え、sourceId を削除） */
+  merge: (sourceId: string, targetId: string) => Promise<string | null>
 }
 
 export interface ExerciseInput {
@@ -188,12 +190,13 @@ export const emptyExerciseInput = (name = ''): ExerciseInput => ({ name, muscle:
  * 一覧に無ければ、その場でカスタム種目を作成して追加できる。
  * single=true のときは1つ選んだ時点で確定する（種目の差し替え用）。
  */
-export const ExercisePicker = ({ library, usage, equipment, actions, single = false, title, onClose, onConfirm }: {
+export const ExercisePicker = ({ library, usage, equipment, actions, single = false, allowCreate = true, title, onClose, onConfirm }: {
   library: ExerciseDef[]
   usage: ExerciseUsage
   equipment: EquipmentItem[]
   actions: ExerciseActions
   single?: boolean
+  allowCreate?: boolean
   title?: string
   onClose: () => void
   onConfirm: (defs: ExerciseDef[]) => void
@@ -240,12 +243,14 @@ export const ExercisePicker = ({ library, usage, equipment, actions, single = fa
 
           <div className="flex-1 overflow-y-auto overscroll-y-contain">
             <div className="max-w-2xl mx-auto p-4 pb-28 space-y-2">
-              <button
-                onClick={() => setCreating(true)}
-                className="w-full py-3.5 border-2 border-dashed border-blue-300 bg-blue-50/50 rounded-2xl text-blue-600 font-bold flex items-center justify-center gap-2 active:scale-[0.99]"
-              >
-                <Plus size={18} />{query.trim() ? `「${query.trim()}」を新しい種目として作成` : '新しい種目を作成'}
-              </button>
+              {allowCreate && (
+                <button
+                  onClick={() => setCreating(true)}
+                  className="w-full py-3.5 border-2 border-dashed border-blue-300 bg-blue-50/50 rounded-2xl text-blue-600 font-bold flex items-center justify-center gap-2 active:scale-[0.99]"
+                >
+                  <Plus size={18} />{query.trim() ? `「${query.trim()}」を新しい種目として作成` : '新しい種目を作成'}
+                </button>
+              )}
               {list.map(def => {
                 const on = selected.includes(def.id)
                 return (
@@ -265,7 +270,7 @@ export const ExercisePicker = ({ library, usage, equipment, actions, single = fa
                   </button>
                 )
               })}
-              {list.length === 0 && <p className="text-center text-gray-400 text-sm py-8">該当する種目がありません。上のボタンから作成できます。</p>}
+              {list.length === 0 && <p className="text-center text-gray-400 text-sm py-8">該当する種目がありません</p>}
             </div>
           </div>
 

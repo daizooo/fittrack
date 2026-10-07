@@ -10,7 +10,7 @@ import { UnsavedGuardContext, type UnsavedGuard } from '../lib/unsavedGuard'
 import { APP_SCROLL_ID, DiscardDialog } from './ui'
 import {
   applyLibraryToPlans, applyLibraryToRecords, buildLibrary, buildNameIndex, defFromRow, defToRow, isNameTaken,
-  unresolvedPlanNames, unresolvedRecordNames, type ExerciseRow
+  mergeInPlans, mergeInRecords, unresolvedPlanNames, unresolvedRecordNames, type ExerciseRow
 } from '../lib/exerciseLibrary'
 import { summarizeExercises } from '../lib/exerciseStats'
 import TabProfile from './TabProfile'
@@ -171,6 +171,8 @@ export default function FitTrack({ userId }: { userId: string }) {
   useEffect(() => { sessionRefForUsage.current = usage }, [usage])
   const plansRefForUsage = useRef(planList)
   useEffect(() => { plansRefForUsage.current = planList }, [planList])
+  const rawRef = useRef({ plans, records })
+  useEffect(() => { rawRef.current = { plans, records } }, [plans, records])
 
   const exerciseActions = useMemo<ExerciseActions>(() => ({
     create: async (input: ExerciseInput) => {
@@ -193,6 +195,30 @@ export default function FitTrack({ userId }: { userId: string }) {
         .eq('id', id).eq('user_id', userId)
       if (error) { console.error('Failed to update exercise:', error); return `保存に失敗しました: ${error.message}` }
       setCustomExercises(prev => prev.map(d => (d.id === id ? { ...d, ...input, name } : d)))
+      return null
+    },
+    merge: async (sourceId, targetId) => {
+      const lib = buildLibrary(customRef.current)
+      const src = lib.find(d => d.id === sourceId)
+      const target = lib.find(d => d.id === targetId)
+      if (!src || src.builtin || !target || src.id === target.id) return '統合できない種目です'
+      // 実施記録 → プラン → 統合元の削除の順に行う。途中で失敗しても、再実行すれば続きから完了する
+      const { plans: rawPlans, records: rawRecords } = rawRef.current
+      const recordChanges = mergeInRecords(rawRecords, src, target)
+      for (const r of recordChanges) {
+        const { error } = await supabase.from('records').update({ exercises: r.exercises }).eq('id', r.id).eq('user_id', userId)
+        if (error) { console.error('Failed to merge records:', error); return `統合に失敗しました: ${error.message}` }
+      }
+      const planChanges = mergeInPlans(rawPlans, src, target)
+      if (planChanges.length > 0) {
+        const { error } = await supabase.from('workout_plans').upsert(planChanges.map(p => planToRow(p, userId)))
+        if (error) { console.error('Failed to merge plans:', error); return `統合に失敗しました: ${error.message}` }
+      }
+      const { error } = await supabase.from('exercises').delete().eq('id', src.id).eq('user_id', userId)
+      if (error) { console.error('Failed to delete merged exercise:', error); return `統合に失敗しました: ${error.message}` }
+      setRecords(prev => prev.map(r => recordChanges.find(c => c.id === r.id) ?? r))
+      setPlans(prev => prev.map(p => planChanges.find(c => c.id === p.id) ?? p))
+      setCustomExercises(prev => prev.filter(d => d.id !== src.id))
       return null
     },
     remove: async id => {

@@ -11,7 +11,7 @@ vi.mock('../lib/supabase', () => import('./__mocks__/supabase'))
 import FitTrack from '../components/FitTrack'
 import { addExercisesViaPicker, createInPicker, editorExerciseNames, selectInPicker } from './helpers'
 import {
-  BUILTIN_EXERCISES, applyLibraryToRecords, buildLibrary, buildNameIndex, isNameTaken, normName
+  BUILTIN_EXERCISES, applyLibraryToRecords, buildLibrary, buildNameIndex, isNameTaken, mergeInPlans, mergeInRecords, normName
 } from '../lib/exerciseLibrary'
 import type { Exercise, SessionExercise, WorkoutRecord } from '../types'
 
@@ -280,5 +280,89 @@ describe('種目タブ', () => {
     fireEvent.click(screen.getByText('削除する'))
     expect(await screen.findByRole('alert')).toHaveTextContent('実施記録があるため削除できません')
     expect(exerciseRows().some(r => r.name === 'ダンベルカール')).toBe(true)
+  })
+})
+
+describe('重複種目の統合', () => {
+  const custom = { id: 'c1', user_id: TEST_USER_ID, name: 'チンニング2', muscle: 'back', kind: 'reps', equipment_type: 'assist', note: '', created_at: '2026-01-01' }
+  const sessionEx = (over: Record<string, unknown>) => ({
+    id: 'e', name: 'チンニング2', type: 'normal', targetSets: 1, defaultReps: 8, defaultWeight: 0, interval: 60,
+    equipmentType: 'bodyweight', inherited: false, options: [], sets: [{ setNumber: 1, reps: 8, weight: 0, completed: true }], ...over
+  })
+  const rec = (id: number, day: number, ex: Record<string, unknown>) => ({
+    id, user_id: TEST_USER_ID, full_date: new Date(2026, 5, day, 12).toISOString(), date: `6/${day}`, day: '月',
+    type: 'workout', category: 'p', exercises: [sessionEx(ex)]
+  })
+
+  it('統合元を指す記録（ID・旧データの名前）とプランを統合先へ付け替え、統合元は削除される', async () => {
+    getMockTable('exercises').push(custom)
+    getMockRecords().push(
+      rec(1, 1, { exerciseId: 'c1' }),                            // 自作のIDで記録
+      rec(2, 2, {}),                                              // ID の無い旧データ（名前だけ）
+      rec(3, 3, { exerciseId: 'sys:chin-up', name: 'チンニング' }) // 統合先
+    )
+    getMockTable('workout_plans').push({
+      id: '00000000-0000-4000-8000-0000000000aa', user_id: TEST_USER_ID, name: '統合テスト', sort_order: 9, warmup: [], cooldown: [],
+      exercises: [{ id: 'x1', exerciseId: 'c1', name: 'チンニング2', type: 'normal', targetSets: 3, defaultReps: 8, defaultWeight: 0, interval: 60, equipmentType: 'bodyweight' }]
+    })
+    const { user } = await load()
+    await user.click(screen.getByRole('button', { name: '種目' }))
+    await user.click(screen.getByRole('button', { name: /^チンニング2/ }))
+    await user.click(screen.getByLabelText('他の種目に統合'))
+
+    const picker = screen.getByRole('dialog', { name: '種目を選ぶ' })
+    expect(within(picker).queryByRole('button', { name: /^チンニング2/ })).not.toBeInTheDocument() // 自分自身は選べない
+    expect(within(picker).queryByText(/新しい種目を作成/)).not.toBeInTheDocument()
+    await user.click(within(picker).getByRole('button', { name: /^チンニング/ }))
+
+    const confirm = screen.getByRole('alertdialog')
+    expect(confirm).toHaveTextContent('「チンニング2」を「チンニング」に統合しますか？')
+    expect(confirm).toHaveTextContent('実施記録（2回）とプラン（1件）')
+    await user.click(within(confirm).getByText('統合する'))
+
+    expect(await screen.findByRole('heading', { name: 'チンニング' })).toBeInTheDocument()
+    expect(exerciseRows().some(r => r.name === 'チンニング2')).toBe(false)
+    const recs = getMockRecords() as unknown as { exercises: { exerciseId: string; name: string }[] }[]
+    expect(recs.every(r => r.exercises[0].exerciseId === 'sys:chin-up' && r.exercises[0].name === 'チンニング')).toBe(true)
+    expect(planRow('統合テスト').exercises[0]).toMatchObject({ exerciseId: 'sys:chin-up', name: 'チンニング' })
+
+    // 履歴は統合先に1つにまとまる
+    await user.click(screen.getByRole('button', { name: /実施履歴・推移を見る（3回）/ }))
+    expect(await screen.findByText('これまで 3 回実施')).toBeInTheDocument()
+  })
+
+  it('標準の種目は統合元にできない（統合ボタンが無い）。統合先には標準も自作も選べる', async () => {
+    const { user } = await load()
+    await user.click(screen.getByRole('button', { name: '種目' }))
+    await user.click(screen.getByRole('button', { name: /^プッシュアップ/ }))
+    expect(screen.queryByLabelText('他の種目に統合')).not.toBeInTheDocument()
+  })
+
+  it('統合をやめる（キャンセル）と何も変わらない', async () => {
+    getMockTable('exercises').push(custom)
+    const { user } = await load()
+    await user.click(screen.getByRole('button', { name: '種目' }))
+    await user.click(screen.getByRole('button', { name: /^チンニング2/ }))
+    await user.click(screen.getByLabelText('他の種目に統合'))
+    await user.click(within(screen.getByRole('dialog', { name: '種目を選ぶ' })).getByRole('button', { name: /^チンニング/ }))
+    await user.click(screen.getByText('キャンセル'))
+    expect(exerciseRows().some(r => r.name === 'チンニング2')).toBe(true)
+    expect(screen.getByRole('heading', { name: 'チンニング2' })).toBeInTheDocument()
+  })
+
+  it('サーキットの種目も付け替わる（純粋関数）', () => {
+    const src = { id: 'c1', name: 'チンニング2', muscle: 'back' as const, kind: 'reps' as const, equipmentType: 'assist', note: '', builtin: false }
+    const target = BUILTIN_EXERCISES.find(d => d.id === 'sys:chin-up')!
+    const plan = {
+      id: 'p', name: 'P', warmup: [], cooldown: [], sortOrder: 1,
+      exercises: [
+        { id: 'ci', name: 'サーキット', type: 'circuit' as const, targetSets: 3, defaultReps: 40, interval: 20, defaultWeight: 0, equipmentType: 'bodyweight',
+          stations: [{ id: 's1', exerciseId: 'c1', name: 'チンニング2', equipmentType: 'assist', defaultWeight: -24 }, { id: 's2', exerciseId: 'sys:push-up', name: 'プッシュアップ', equipmentType: 'bodyweight', defaultWeight: 0 }] }
+      ]
+    }
+    const [changed] = mergeInPlans([plan, { ...plan, id: 'q', exercises: [] }], src, target)
+    expect(changed.id).toBe('p')
+    expect(changed.exercises[0].stations?.map(s => [s.exerciseId, s.name])).toEqual([['sys:chin-up', 'チンニング'], ['sys:push-up', 'プッシュアップ']])
+    expect(mergeInRecords([], src, target)).toEqual([])
   })
 })

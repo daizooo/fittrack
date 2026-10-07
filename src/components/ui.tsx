@@ -80,18 +80,23 @@ export const Stepper = ({ value, onChange, min = 0, max = 999, step = 1, label, 
 }
 
 /** 編集内容の破棄確認ダイアログ */
-export const DiscardDialog = ({ onKeep, onDiscard, title = '編集内容を破棄しますか？', discardLabel = '破棄する' }: {
+export const DiscardDialog = ({
+  onKeep, onDiscard, title = '編集内容を破棄しますか？', message = '保存していない変更は失われます。',
+  discardLabel = '破棄する', keepLabel = '編集を続ける'
+}: {
   onKeep: () => void
   onDiscard: () => void
   title?: string
+  message?: string
   discardLabel?: string
+  keepLabel?: string
 }) => (
   <div role="alertdialog" aria-modal="true" aria-label={title} className="fixed inset-0 bg-gray-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-5">
     <div className="bg-white rounded-3xl w-full max-w-sm p-6 shadow-2xl text-center">
       <h3 className="text-lg font-bold text-gray-800 mb-2">{title}</h3>
-      <p className="text-sm text-gray-500 mb-6">保存していない変更は失われます。</p>
+      <p className="text-sm text-gray-500 mb-6">{message}</p>
       <div className="flex gap-3">
-        <button onClick={onKeep} className="flex-1 py-3 bg-gray-100 text-gray-700 rounded-xl font-bold active:scale-95 transition-transform">編集を続ける</button>
+        <button onClick={onKeep} className="flex-1 py-3 bg-gray-100 text-gray-700 rounded-xl font-bold active:scale-95 transition-transform">{keepLabel}</button>
         <button onClick={onDiscard} className="flex-1 py-3 bg-red-500 text-white rounded-xl font-bold shadow-lg shadow-red-500/30 active:scale-95 transition-transform">{discardLabel}</button>
       </div>
     </div>

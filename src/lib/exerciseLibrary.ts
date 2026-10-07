@@ -199,3 +199,45 @@ export const exerciseFromDef = (def: ExerciseDef, validEquipmentIds: string[], n
 /** 同じ種目か（ID があればIDで、無ければ名前で比較する） */
 export const sameExercise = (a: { exerciseId?: string; name: string }, b: { exerciseId?: string; name: string }) =>
   a.exerciseId && b.exerciseId ? a.exerciseId === b.exerciseId : a.name.trim() === b.name.trim()
+
+// ─── 種目の統合（重複種目の保険） ─────────────────────────────────────────────
+
+/** 統合元の種目を指しているか（ID、または ID の無い旧データでは名前の一致） */
+const pointsTo = (item: { exerciseId?: string; name: string }, src: ExerciseDef) =>
+  item.exerciseId ? item.exerciseId === src.id : normName(item.name) === normName(src.name)
+
+/** プランの中の統合元の種目を統合先に付け替える。変更のあったプランだけを返す */
+export const mergeInPlans = (plans: WorkoutPlan[], src: ExerciseDef, target: ExerciseDef): WorkoutPlan[] => {
+  const relink = <T extends { exerciseId?: string; name: string }>(item: T): T =>
+    (pointsTo(item, src) ? { ...item, exerciseId: target.id, name: target.name } : item)
+  const changed: WorkoutPlan[] = []
+  plans.forEach(p => {
+    let hit = false
+    const exercises = p.exercises.map(ex => {
+      if (ex.type === 'circuit') {
+        const stations = stationsOf(ex).map(st => { const n = relink(st); if (n !== st) hit = true; return n })
+        return { ...ex, stations }
+      }
+      const n = relink(ex)
+      if (n !== ex) hit = true
+      return n
+    })
+    if (hit) changed.push({ ...p, exercises })
+  })
+  return changed
+}
+
+/** 記録の中の統合元の種目を統合先に付け替える。変更のあった記録だけを返す */
+export const mergeInRecords = (records: WorkoutRecord[], src: ExerciseDef, target: ExerciseDef): WorkoutRecord[] => {
+  const changed: WorkoutRecord[] = []
+  records.forEach(r => {
+    let hit = false
+    const exercises = r.exercises.map(ex => {
+      if (!pointsTo(ex, src)) return ex
+      hit = true
+      return { ...ex, exerciseId: target.id, name: target.name }
+    })
+    if (hit) changed.push({ ...r, exercises })
+  })
+  return changed
+}

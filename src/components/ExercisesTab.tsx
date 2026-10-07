@@ -1,8 +1,8 @@
 import { useMemo, useState } from 'react'
-import { ChevronLeft, ChevronRight, Edit3, History, Plus, Trash2 } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Edit3, GitMerge, History, Plus, Trash2 } from 'lucide-react'
 import { KIND_LABELS, muscleLabel } from '../lib/exerciseLibrary'
 import {
-  ExerciseForm, ExerciseMeta, ExerciseSearchBar, emptyExerciseInput, filterExercises, sortExercises,
+  ExerciseForm, ExerciseMeta, ExercisePicker, ExerciseSearchBar, emptyExerciseInput, filterExercises, sortExercises,
   type ExerciseActions, type ExerciseUsage
 } from './ExercisePicker'
 import { ExerciseDetailModal } from './RecordsTab'
@@ -25,6 +25,8 @@ export default function ExercisesTab({ library, usage, records, plans, equipment
   const [muscle, setMuscle] = useState<MuscleGroup | 'all'>('all')
   const [showHistory, setShowHistory] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [mergePicking, setMergePicking] = useState(false)
+  const [mergeTarget, setMergeTarget] = useState<ExerciseDef | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   const list = useMemo(() => sortExercises(filterExercises(library, query, muscle), usage), [library, query, muscle, usage])
@@ -78,6 +80,7 @@ export default function ExercisesTab({ library, usage, records, plans, equipment
           </div>
           {!def.builtin && (
             <div className="flex gap-1.5 flex-shrink-0">
+              <button onClick={() => setMergePicking(true)} aria-label="他の種目に統合" className="text-gray-500 bg-white border border-gray-200 p-2 rounded-lg active:scale-95"><GitMerge size={16} /></button>
               <button onClick={() => setConfirmDelete(true)} aria-label="種目を削除" className="text-gray-500 bg-white border border-gray-200 p-2 rounded-lg active:scale-95 hover:text-red-500"><Trash2 size={16} /></button>
               <button onClick={() => setView({ mode: 'edit', id: def.id })} className="text-blue-600 bg-blue-50 px-3 py-1.5 rounded-lg text-sm font-bold flex items-center gap-1 active:scale-95"><Edit3 size={16} /> 編集</button>
             </div>
@@ -106,9 +109,31 @@ export default function ExercisesTab({ library, usage, records, plans, equipment
         </div>
 
         {showHistory && <ExerciseDetailModal exerciseKey={def.id} records={records} onClose={() => setShowHistory(false)} />}
+        {mergePicking && (
+          <ExercisePicker
+            library={library.filter(d => d.id !== def.id)} usage={usage} equipment={equipment} actions={actions}
+            single allowCreate={false} title={`「${def.name}」の統合先を選ぶ`}
+            onClose={() => setMergePicking(false)}
+            onConfirm={([t]) => { setMergePicking(false); if (t) setMergeTarget(t) }}
+          />
+        )}
+        {mergeTarget && (
+          <DiscardDialog
+            title={`「${def.name}」を「${mergeTarget.name}」に統合しますか？`}
+            message={`実施記録${u ? `（${u.sessions}回）` : ''}とプラン${usedIn.length > 0 ? `（${usedIn.length}件）` : ''}の種目が「${mergeTarget.name}」に付け替えられ、「${def.name}」は削除されます。元に戻せません。`}
+            discardLabel="統合する" keepLabel="キャンセル" onKeep={() => setMergeTarget(null)}
+            onDiscard={async () => {
+              const target = mergeTarget
+              setMergeTarget(null)
+              const err = await actions.merge(def.id, target.id)
+              if (err) setError(err)
+              else setView({ mode: 'detail', id: target.id })
+            }}
+          />
+        )}
         {confirmDelete && (
           <DiscardDialog
-            title={`「${def.name}」を削除しますか？`} discardLabel="削除する" onKeep={() => setConfirmDelete(false)}
+            title={`「${def.name}」を削除しますか？`} message="削除すると元に戻せません。" discardLabel="削除する" keepLabel="キャンセル" onKeep={() => setConfirmDelete(false)}
             onDiscard={async () => {
               setConfirmDelete(false)
               const err = await actions.remove(def.id)
