@@ -530,6 +530,11 @@ export default function FitTrack({ userId }: { userId: string }) {
     return () => clearInterval(timerId)
   }, [activeTimer.isActive, activeTimer.paused, activeTimer.endTime]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // 運動・ストレッチ・サーキットの休憩（次の種目に出る）は、種目の行の中にタイマーを出す。下の浮かぶ表示は、行が無い休憩のときだけ使う
+  const timerShownInRow = activeTimer.stretch !== null
+    || (activeTimer.exIdx !== null && activeTimer.setIdx !== null)
+    || (activeTimer.type === 'rest' && activeTimer.then !== null)
+
   const timerControls: TimerControls = useMemo(
     () => ({ activeTimer, startTimer, startTabataTimer, startStretchTimer, stopTimer, pauseTimer, resumeTimer }),
     [activeTimer, startTimer, startTabataTimer, startStretchTimer, stopTimer, pauseTimer, resumeTimer]
@@ -680,7 +685,7 @@ export default function FitTrack({ userId }: { userId: string }) {
 
       <BottomNav activeTab={activeTab} setActiveTab={requestTab} />
 
-      {activeTimer.isActive && (
+      {activeTimer.isActive && !timerShownInRow && (
         <div
           className={`fixed left-1/2 -translate-x-1/2 px-6 py-3 rounded-full shadow-2xl flex items-center gap-4 z-50 animate-in slide-in-from-bottom-5
             ${activeTimer.type === 'work' || activeTimer.type === 'tabata_work' ? 'bg-orange-600 text-white' :

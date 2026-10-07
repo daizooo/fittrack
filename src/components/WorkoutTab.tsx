@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import {
-  Play, Moon, CheckCircle, ChevronLeft, Minus, Plus, Timer, Sunrise, Sunset, Clock, Star, PlayCircle, Repeat, ChevronDown, Pause
+  Play, Moon, CheckCircle, ChevronLeft, Minus, Plus, Timer, Sunrise, Sunset, Clock, Star, PlayCircle, Repeat, ChevronDown, Pause, X
 } from 'lucide-react'
 import { buildSession, estimatePlanMinutes, lastPerformedMap, recommendPlanId, segmentExercises } from '../lib/plans'
 import { daysAgo, daysOfWeek, formatDaysAgo, isSameDay } from '../lib/dates'
@@ -74,11 +74,14 @@ const StretchSection = ({ phase, session, setSession, timer }: {
       </div>
       <div className="px-2 pb-2 space-y-1.5">
         {items.map((s, idx) => (
-          <div key={s.id} className={`flex items-center gap-2 p-2 rounded-xl ${s.completed ? 'bg-green-50' : 'bg-white'} ${running === idx ? 'ring-2 ring-orange-400' : ''}`}>
+          <TimedRow key={s.id} state={running === idx ? 'running' : null} dim={false} idleBg={s.completed ? 'bg-green-50' : 'bg-white'} className="flex items-center gap-2 p-2 rounded-xl transition-all">
             <div className="flex-1 min-w-0">
-              <div className={`text-sm font-bold truncate ${s.completed ? 'text-gray-400 line-through' : 'text-gray-800'}`}>{s.name}</div>
-              <div className="text-[10px] text-gray-400 font-bold flex items-center gap-0.5"><Timer size={10} />{s.seconds}秒</div>
+              <div className={`font-bold truncate ${running === idx ? 'text-lg font-black text-white' : s.completed ? 'text-sm text-gray-400 line-through' : 'text-sm text-gray-800'}`}>{s.name}</div>
+              {running === idx
+                ? <RowTimerDisplay timer={timer} />
+                : <div className="text-[10px] text-gray-400 font-bold flex items-center gap-0.5"><Timer size={10} />{s.seconds}秒</div>}
             </div>
+            {running === idx ? <RowRunButton timer={timer} name={s.name} /> : (
             <button
               onClick={() => timer.startStretchTimer(phase, idx, false)}
               disabled={s.completed}
@@ -87,6 +90,7 @@ const StretchSection = ({ phase, session, setSession, timer }: {
             >
               <Play size={16} fill="currentColor" className="ml-0.5" />
             </button>
+            )}
             <button
               onClick={() => toggle(idx)}
               aria-label={`${s.name}を完了`}
@@ -94,7 +98,7 @@ const StretchSection = ({ phase, session, setSession, timer }: {
             >
               <CheckCircle size={20} />
             </button>
-          </div>
+          </TimedRow>
         ))}
       </div>
     </div>
@@ -148,20 +152,32 @@ const RowTimerDisplay = ({ timer }: { timer: TimerControls }) => {
 
 /** 休憩中に、次に始まる行へ付ける目印 */
 const NextBadge = ({ timer }: { timer: TimerControls }) => (
-  <span className="flex-shrink-0 text-[10px] font-black bg-blue-600 text-white px-1.5 py-0.5 rounded tracking-wider">NEXT ・ 休憩 {timer.activeTimer.remaining}</span>
+  <span className="flex-shrink-0 text-[10px] font-black bg-blue-600 text-white px-1.5 py-0.5 rounded tracking-wider">
+    {timer.activeTimer.paused ? 'NEXT ・ 一時停止中' : `NEXT ・ 休憩 ${timer.activeTimer.remaining}`}
+  </span>
 )
 
-/** 実行中の行の再生ボタン。押すと一時停止／再開する */
-const RowRunButton = ({ timer, name }: { timer: TimerControls; name: string }) => {
+/** 実行中の行のボタン。再生ボタンは一時停止／再開に変わり、止めるボタンも並ぶ（下のタイマー表示は出さないため） */
+const RowRunButton = ({ timer, name, tone = 'running' }: { timer: TimerControls; name: string; tone?: 'running' | 'next' }) => {
   const paused = timer.activeTimer.paused
+  const next = tone === 'next' // 休憩中（次の種目の行）は、オレンジ地ではないので色を変える
   return (
-    <button
-      onClick={paused ? timer.resumeTimer : timer.pauseTimer}
-      aria-label={`${name}のタイマーを${paused ? '再開' : '一時停止'}`}
-      className="w-11 h-11 flex-shrink-0 flex justify-center items-center rounded-xl bg-white text-orange-600 shadow-sm active:scale-95 transition-all"
-    >
-      {paused ? <Play size={20} fill="currentColor" className="ml-0.5" /> : <Pause size={20} fill="currentColor" />}
-    </button>
+    <>
+      <button
+        onClick={paused ? timer.resumeTimer : timer.pauseTimer}
+        aria-label={`${name}のタイマーを${paused ? '再開' : '一時停止'}`}
+        className={`w-11 h-11 flex-shrink-0 flex justify-center items-center rounded-xl shadow-sm active:scale-95 transition-all ${next ? 'bg-blue-600 text-white' : 'bg-white text-orange-600'}`}
+      >
+        {paused ? <Play size={20} fill="currentColor" className="ml-0.5" /> : <Pause size={20} fill="currentColor" />}
+      </button>
+      <button
+        onClick={timer.stopTimer}
+        aria-label={`${name}のタイマーを止める`}
+        className={`w-9 h-9 flex-shrink-0 flex justify-center items-center rounded-xl active:scale-95 transition-all ${next ? 'bg-gray-200 text-gray-600' : 'bg-orange-700/60 text-white'}`}
+      >
+        <X size={16} />
+      </button>
+    </>
   )
 }
 
@@ -185,7 +201,9 @@ const CircuitSessionCard = ({ items, start, timer, onSetUpdate, onToggle, onRoun
   // 同じ種目が周回数ぶん並んで長くなるので、いま取り組む周だけを開き、ほかの周は1行に畳む（タップで開閉）
   const [toggled, setToggled] = useState<Record<number, boolean>>({})
   const currentRound = Array.from({ length: rounds }, (_, r) => r).find(r => items.some(ex => !ex.sets[r].completed)) ?? -1
-  const isOpen = (r: number) => (r in toggled ? toggled[r] : r === currentRound)
+  // タイマーが動いている周（次の種目を待つ周も）は、閉じていても開く。タイマーは行の中にだけ出すため
+  const hasTimerRow = (r: number) => items.some((_, i) => rowTimerState(timer.activeTimer, start + i, r) !== null)
+  const isOpen = (r: number) => hasTimerRow(r) || (r in toggled ? toggled[r] : r === currentRound)
   // このサーキットでタイマーが動いている（運動中、または次の種目を待つ休憩中）なら、ほかの行を薄くする
   const inCircuit = (i: number | null | undefined) => i != null && i >= start && i < start + items.length
   const t = timer.activeTimer
@@ -253,7 +271,7 @@ const CircuitSessionCard = ({ items, start, timer, onSetUpdate, onToggle, onRoun
                         {ex.options.map((o, oi) => <option key={oi} value={o.weight}>{o.label}</option>)}
                       </select>
                     )}
-                    {state === 'running' ? <RowRunButton timer={timer} name={`${ex.name} ${r + 1}周目`} /> : (
+                    {state ? <RowRunButton timer={timer} name={`${ex.name} ${r + 1}周目`} tone={state} /> : (
                     <button
                       onClick={() => timer.startTimer('work', set.reps, exIdx, r, ex.interval)}
                       disabled={set.completed}
