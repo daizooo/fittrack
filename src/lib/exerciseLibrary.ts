@@ -13,8 +13,17 @@ export const MUSCLE_GROUPS: { id: MuscleGroup; label: string }[] = [
   { id: 'legs', label: '脚' },
   { id: 'glutes', label: 'お尻' },
   { id: 'cardio', label: '全身・有酸素' },
+  { id: 'upper', label: '上半身' },
+  { id: 'lower', label: '下半身' },
   { id: 'other', label: 'その他' }
 ]
+
+/** 絞り込み用: 「上半身」「下半身」は、それに含まれる細かい部位の種目も対象にする */
+const MUSCLE_FILTER_GROUPS: Partial<Record<MuscleGroup, MuscleGroup[]>> = {
+  upper: ['upper', 'chest', 'back', 'shoulders', 'arms'],
+  lower: ['lower', 'legs', 'glutes']
+}
+export const matchesMuscle = (m: MuscleGroup, filter: MuscleGroup) => (MUSCLE_FILTER_GROUPS[filter] ?? [filter]).includes(m)
 export const muscleLabel = (m: MuscleGroup) => MUSCLE_GROUPS.find(g => g.id === m)?.label ?? 'その他'
 
 export const KIND_LABELS: Record<ExerciseKind, string> = { reps: '回数', duration: '秒数', hiit: 'HIIT（ラウンド）' }

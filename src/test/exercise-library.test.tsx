@@ -11,7 +11,7 @@ vi.mock('../lib/supabase', () => import('./__mocks__/supabase'))
 import FitTrack from '../components/FitTrack'
 import { addExercisesViaPicker, createInPicker, editorExerciseNames, selectInPicker } from './helpers'
 import {
-  BUILTIN_EXERCISES, applyLibraryToRecords, buildLibrary, buildNameIndex, isNameTaken, mergeInPlans, mergeInRecords, normName
+  BUILTIN_EXERCISES, applyLibraryToRecords, buildLibrary, buildNameIndex, isNameTaken, matchesMuscle, mergeInPlans, mergeInRecords, normName
 } from '../lib/exerciseLibrary'
 import type { Exercise, SessionExercise, WorkoutRecord } from '../types'
 
@@ -42,6 +42,15 @@ describe('標準カタログ', () => {
     expect(ids.every(id => id.startsWith('sys:'))).toBe(true)
     const names = BUILTIN_EXERCISES.flatMap(d => [d.name, ...(d.aliases ?? [])]).map(normName)
     expect(new Set(names).size).toBe(names.length)
+  })
+
+  it('「上半身」「下半身」で絞り込むと、含まれる細かい部位の種目も対象になる', () => {
+    expect(matchesMuscle('chest', 'upper')).toBe(true)
+    expect(matchesMuscle('arms', 'upper')).toBe(true)
+    expect(matchesMuscle('legs', 'upper')).toBe(false)
+    expect(matchesMuscle('glutes', 'lower')).toBe(true)
+    expect(matchesMuscle('core', 'lower')).toBe(false)
+    expect(matchesMuscle('chest', 'chest')).toBe(true)
   })
 
   it('名前の照合は表記ゆれ（全角半角・空白・別名）を吸収する', () => {

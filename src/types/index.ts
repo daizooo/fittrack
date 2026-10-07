@@ -3,7 +3,7 @@ export type RecordType = 'workout' | 'rest'
 export type TimerType = 'work' | 'rest' | 'tabata_work' | 'tabata_rest'
 
 /** 種目の主な部位 */
-export type MuscleGroup = 'chest' | 'back' | 'shoulders' | 'arms' | 'core' | 'legs' | 'glutes' | 'cardio' | 'other'
+export type MuscleGroup = 'chest' | 'back' | 'shoulders' | 'arms' | 'core' | 'legs' | 'glutes' | 'cardio' | 'upper' | 'lower' | 'other'
 /** 種目の入力タイプ: 回数 / 秒数 / HIIT（ラウンド） */
 export type ExerciseKind = 'reps' | 'duration' | 'hiit'
 
