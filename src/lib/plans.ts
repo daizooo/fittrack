@@ -66,13 +66,13 @@ export const createCircuitStation = (group: string, over: Partial<Exercise> = {}
   equipmentType: 'bodyweight', supersetGroup: group, circuit: true, ...over
 })
 
-export type ExerciseSegment =
-  | { kind: 'single'; start: number; items: [Exercise] }
-  | { kind: 'circuit'; group: string; start: number; items: Exercise[] }
+export type ExerciseSegment<T extends Exercise = Exercise> =
+  | { kind: 'single'; start: number; items: [T] }
+  | { kind: 'circuit'; group: string; start: number; items: T[] }
 
 /** 種目リストを「単独の種目」と「サーキット（連続するステーションの塊）」に分ける */
-export const segmentExercises = (exercises: Exercise[]): ExerciseSegment[] => {
-  const segs: ExerciseSegment[] = []
+export const segmentExercises = <T extends Exercise>(exercises: T[]): ExerciseSegment<T>[] => {
+  const segs: ExerciseSegment<T>[] = []
   exercises.forEach((ex, i) => {
     const last = segs[segs.length - 1]
     if (ex.circuit && ex.supersetGroup) {

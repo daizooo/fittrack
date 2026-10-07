@@ -542,37 +542,54 @@ const StretchSummary = ({ phase, items }: { phase: StretchPhase; items: Stretch[
 
 export const ExerciseList = ({ exercises }: { exercises: Exercise[] }) => (
   <div className="space-y-0">
-    {exercises.map((ex, idx) => {
+    {segmentExercises(exercises).map(seg => {
+      // サーキットは1枚のカードにまとめ、運動・休憩・周回数は共通として1回だけ表示する
+      if (seg.kind === 'circuit') {
+        const c = seg.items[0]
+        return (
+          <div key={seg.group} className="bg-white p-5 rounded-3xl shadow-sm border border-emerald-200 mb-4">
+            <div className="font-black text-emerald-700 mb-3 flex gap-2 text-lg items-center">
+              <Repeat size={18} />サーキット
+              <span className="text-[9px] bg-emerald-100 text-emerald-600 px-1.5 py-0.5 rounded font-black tracking-wider">CIR</span>
+            </div>
+            <div className="flex flex-wrap gap-2 mb-3">
+              <span className="bg-gray-100 text-gray-600 text-xs font-bold rounded-lg px-3 py-1.5">🔁 {c.targetSets}周</span>
+              <span className="bg-orange-50 text-orange-600 text-xs font-bold rounded-lg px-3 py-1.5">運動 {c.defaultReps}秒</span>
+              <span className="bg-blue-50 text-blue-600 text-xs font-bold rounded-lg px-3 py-1.5 flex items-center gap-1"><Timer size={12} /> 休憩 {c.interval}秒</span>
+            </div>
+            <ol className="space-y-1">
+              {seg.items.map((st, i) => (
+                <li key={st.id} className="text-sm font-bold text-gray-800 flex gap-2">
+                  <span className="text-emerald-500 opacity-70">{seg.start + i + 1}.</span>{st.name}
+                </li>
+              ))}
+            </ol>
+          </div>
+        )
+      }
+      const ex = seg.items[0]
+      const idx = seg.start
       const nextEx = exercises[idx + 1]
       const isInSuperset = !!ex.supersetGroup
-      const isCircuit = !!ex.circuit
       const isLinkedToNext = isInSuperset && nextEx?.supersetGroup === ex.supersetGroup
       return (
         <React.Fragment key={ex.id}>
-          <div className={`bg-white p-5 rounded-3xl shadow-sm border ${isCircuit ? 'border-emerald-200' : isInSuperset ? 'border-purple-200' : 'border-gray-100'} ${isLinkedToNext ? 'mb-0 rounded-b-xl' : 'mb-4'}`}>
+          <div className={`bg-white p-5 rounded-3xl shadow-sm border ${isInSuperset ? 'border-purple-200' : 'border-gray-100'} ${isLinkedToNext ? 'mb-0 rounded-b-xl' : 'mb-4'}`}>
             <div className="font-bold text-gray-800 mb-3 flex gap-2 text-lg items-center">
               <span className="text-blue-500 opacity-50">{idx + 1}.</span>
               {ex.name}
-              {isCircuit
-                ? <span className="text-[9px] bg-emerald-100 text-emerald-600 px-1.5 py-0.5 rounded font-black tracking-wider">CIR</span>
-                : isInSuperset && <span className="text-[9px] bg-purple-100 text-purple-600 px-1.5 py-0.5 rounded font-black tracking-wider">SS</span>}
+              {isInSuperset && <span className="text-[9px] bg-purple-100 text-purple-600 px-1.5 py-0.5 rounded font-black tracking-wider">SS</span>}
             </div>
             <div className="flex flex-wrap gap-2">
-              <span className="bg-gray-100 text-gray-600 text-xs font-bold rounded-lg px-3 py-1.5">🎯 {isCircuit ? `${ex.targetSets}周` : `${ex.targetSets} Sets`} × {ex.type !== 'tabata' ? (ex.type === 'duration' ? `${ex.defaultReps}秒` : `${ex.defaultReps}回`) : 'HIIT'}</span>
+              <span className="bg-gray-100 text-gray-600 text-xs font-bold rounded-lg px-3 py-1.5">🎯 {ex.targetSets} Sets × {ex.type !== 'tabata' ? (ex.type === 'duration' ? `${ex.defaultReps}秒` : `${ex.defaultReps}回`) : 'HIIT'}</span>
               <span className="bg-gray-100 text-gray-600 text-xs font-bold rounded-lg px-3 py-1.5 flex items-center gap-1"><Timer size={12} /> {ex.interval}s</span>
               {ex.type === 'tabata' && <span className="bg-orange-50 text-orange-600 text-xs font-bold rounded-lg px-3 py-1.5 flex items-center gap-1"><Flame size={12} /> {ex.tabataWork}s / {ex.tabataRest}s × {ex.tabataCycles}回</span>}
             </div>
           </div>
           {isLinkedToNext && (
-            isCircuit ? (
-              <div className="flex items-center justify-center h-7 bg-emerald-50 border-x border-emerald-200 -mt-px mb-0">
-                <span className="text-[9px] font-bold text-emerald-600">🔁 続けて次の種目へ（サーキット）</span>
-              </div>
-            ) : (
-              <div className="flex items-center justify-center h-7 bg-purple-50 border-x border-purple-200 -mt-px mb-0">
-                <span className="text-[9px] font-bold text-purple-500">⚡ 続けて実施（スーパーセット）</span>
-              </div>
-            )
+            <div className="flex items-center justify-center h-7 bg-purple-50 border-x border-purple-200 -mt-px mb-0">
+              <span className="text-[9px] font-bold text-purple-500">⚡ 続けて実施（スーパーセット）</span>
+            </div>
           )}
         </React.Fragment>
       )

@@ -163,11 +163,55 @@ describe('サーキット', () => {
     await user.click(screen.getByText('ワークアウト'))
     await user.click(screen.getByRole('radio', { name: /サーキット/ }))
     await user.click(screen.getByText('トレーニングを開始する'))
-    expect(screen.getAllByText('CIR').length).toBeGreaterThan(0)
 
-    // 1つ目のステーションのセット完了 → グループ最後の種目ではないが休憩が始まる
+    // 種目ごとのカード（セット数・インターバル）ではなく、1枚のサーキットカードにまとまる
+    expect(screen.getByText('1周目')).toBeInTheDocument()
+    expect(screen.getAllByText(/休憩 20秒/)).toHaveLength(1)
+    expect(screen.queryByText(/Sets/)).not.toBeInTheDocument()
+    expect(screen.getByText('3 周')).toBeInTheDocument()
+    expect(screen.getAllByText(/周目$/)).toHaveLength(3)
+    expect(screen.getAllByTestId('set-check')).toHaveLength(6) // 2種目 × 3周
+
+    // 1つ目のステーションの完了 → グループ最後の種目ではないが休憩が始まる
     await user.click(screen.getAllByTestId('set-check')[0])
     expect(screen.getByText('REST')).toBeInTheDocument()
+  })
+
+  it('セッションで周回数を増減すると全種目の周が増減し、記録は種目ごとに残る', async () => {
+    const user = await openNewPlan()
+    await user.type(screen.getByLabelText('プラン名'), 'サーキット')
+    await user.click(screen.getByText('サーキット追加'))
+    const names = screen.getAllByLabelText('種目名')
+    await user.type(names[0], '懸垂')
+    await user.type(names[1], 'プッシュアップ')
+    await user.click(screen.getByText('保存'))
+    await waitFor(() => expect(savedPlan('サーキット')).toBeTruthy())
+
+    await user.click(screen.getByText('ワークアウト'))
+    await user.click(screen.getByRole('radio', { name: /サーキット/ }))
+    await user.click(screen.getByText('トレーニングを開始する'))
+    await user.click(screen.getByLabelText('周回を減らす'))
+    expect(screen.getByText('2 周')).toBeInTheDocument()
+    expect(screen.getAllByTestId('set-check')).toHaveLength(4)
+    await user.click(screen.getByLabelText('周回を増やす'))
+    await user.click(screen.getByLabelText('周回を増やす'))
+    expect(screen.getAllByTestId('set-check')).toHaveLength(8)
+  })
+
+  it('プラン詳細でも種目ごとのセット数ではなく、共通の周回数・運動・休憩を1回だけ表示する', async () => {
+    const user = await openNewPlan()
+    await user.type(screen.getByLabelText('プラン名'), 'サーキット')
+    await user.click(screen.getByText('サーキット追加'))
+    const names = screen.getAllByLabelText('種目名')
+    await user.type(names[0], '懸垂')
+    await user.type(names[1], 'プッシュアップ')
+    await user.click(screen.getByText('保存'))
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'サーキット' })).toBeInTheDocument())
+
+    expect(screen.getByText('🔁 3周')).toBeInTheDocument()
+    expect(screen.getAllByText(/運動 40秒/)).toHaveLength(1)
+    expect(screen.getAllByText(/休憩 20秒/)).toHaveLength(1)
+    expect(screen.queryByText(/Sets/)).not.toBeInTheDocument()
   })
 })
 
