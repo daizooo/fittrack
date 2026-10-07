@@ -40,7 +40,12 @@ async function startCircuitWorkout(rest?: number) {
 const advance = async (ms: number) => {
   for (let t = 0; t < ms; t += 250) await act(async () => { vi.advanceTimersByTime(Math.min(250, ms - t)) })
 }
-const done = (name: string, round: number) => screen.getByLabelText(`${name} ${round}周目を完了`).className.includes('bg-green-500')
+// 畳まれている周は開いてから確認する
+const done = (name: string, round: number) => {
+  const label = `${name} ${round}周目を完了`
+  if (!screen.queryByLabelText(label)) fireEvent.click(screen.getByLabelText(`${round}周目を開く`))
+  return screen.getByLabelText(label).className.includes('bg-green-500')
+}
 
 beforeEach(() => {
   resetMockDB()

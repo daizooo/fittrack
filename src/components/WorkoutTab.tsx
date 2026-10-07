@@ -1,6 +1,6 @@
-import React, { useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import {
-  Play, Moon, CheckCircle, ChevronLeft, Minus, Plus, Timer, Sunrise, Sunset, Clock, Star, PlayCircle, Repeat
+  Play, Moon, CheckCircle, ChevronLeft, Minus, Plus, Timer, Sunrise, Sunset, Clock, Star, PlayCircle, Repeat, ChevronDown
 } from 'lucide-react'
 import { buildSession, estimatePlanMinutes, lastPerformedMap, recommendPlanId, segmentExercises } from '../lib/plans'
 import { daysAgo, daysOfWeek, formatDaysAgo, isSameDay } from '../lib/dates'
@@ -118,6 +118,11 @@ const CircuitSessionCard = ({ items, start, timer, onSetUpdate, onToggle, onRoun
   const rounds = items[0].sets.length
   const rest = items[0].interval
   const doneCount = items.reduce((n, ex) => n + ex.sets.filter(s => s.completed).length, 0)
+  // 同じ種目が周回数ぶん並んで長くなるので、いま取り組む周だけを開き、ほかの周は1行に畳む（タップで開閉）
+  const [toggled, setToggled] = useState<Record<number, boolean>>({})
+  const currentRound = Array.from({ length: rounds }, (_, r) => r).find(r => items.some(ex => !ex.sets[r].completed)) ?? -1
+  const isOpen = (r: number) => (r in toggled ? toggled[r] : r === currentRound)
+  useEffect(() => { setToggled({}) }, [currentRound]) // 次の周へ進んだら、手動の開閉は忘れて「現在の周だけ開く」に戻す
   return (
     <div className="bg-white rounded-2xl shadow-sm overflow-hidden border-2 border-emerald-200 mb-6">
       <div className="p-3 bg-emerald-50 border-b border-emerald-100 flex justify-between items-center flex-wrap gap-2">
@@ -135,10 +140,24 @@ const CircuitSessionCard = ({ items, start, timer, onSetUpdate, onToggle, onRoun
         </div>
       </div>
       <div className="p-2 space-y-3">
-        {Array.from({ length: rounds }, (_, r) => (
+        {Array.from({ length: rounds }, (_, r) => {
+          const roundDone = items.filter(ex => ex.sets[r].completed).length
+          const allDone = roundDone === items.length
+          const open = isOpen(r)
+          return (
           <div key={r}>
-            <div className="text-[10px] font-black text-emerald-600 tracking-widest px-1 mb-1">{r + 1}周目</div>
-            <div className="space-y-1.5">
+            <button
+              onClick={() => setToggled(prev => ({ ...prev, [r]: !open }))}
+              aria-expanded={open} aria-label={`${r + 1}周目を${open ? '閉じる' : '開く'}`}
+              className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-left active:scale-[0.99] transition-transform ${open ? 'mb-1' : allDone ? 'bg-green-50' : 'bg-gray-50'}`}
+            >
+              <span className={`text-[10px] font-black tracking-widest ${allDone ? 'text-green-600' : 'text-emerald-600'}`}>{r + 1}周目</span>
+              {allDone && <CheckCircle size={14} className="text-green-500" />}
+              <span className="text-[10px] font-bold text-gray-400">{roundDone}/{items.length}</span>
+              {!open && <span className="text-[10px] text-gray-400 truncate flex-1 min-w-0">{items.map(ex => ex.name).join(' / ')}</span>}
+              <ChevronDown size={14} className={`ml-auto flex-shrink-0 text-gray-400 transition-transform ${open ? 'rotate-180' : ''}`} />
+            </button>
+            {open && <div className="space-y-1.5">
               {items.map((ex, i) => {
                 const set = ex.sets[r]
                 const exIdx = start + i
@@ -178,9 +197,10 @@ const CircuitSessionCard = ({ items, start, timer, onSetUpdate, onToggle, onRoun
                   </div>
                 )
               })}
-            </div>
+            </div>}
           </div>
-        ))}
+          )
+        })}
       </div>
     </div>
   )

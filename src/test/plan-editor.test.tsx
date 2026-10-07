@@ -188,7 +188,7 @@ describe('サーキット', () => {
     expect(screen.queryByText(/Sets/)).not.toBeInTheDocument()
     expect(screen.getByText('3 周')).toBeInTheDocument()
     expect(screen.getAllByText(/周目$/)).toHaveLength(3)
-    expect(screen.getAllByTestId('set-check')).toHaveLength(6) // 2種目 × 3周
+    expect(screen.getAllByTestId('set-check')).toHaveLength(2) // 開いているのは現在の周（2種目）だけ。同じ一覧が3回並ばない
 
     // 1つ目のステーションの完了 → グループ最後の種目ではないが休憩が始まる
     await user.click(screen.getAllByTestId('set-check')[0])
@@ -205,10 +205,9 @@ describe('サーキット', () => {
     await user.click(screen.getByText('ワークアウト'))
     await user.click(screen.getByRole('radio', { name: /サーキット/ }))
     await user.click(screen.getByText('トレーニングを開始する'))
-    const checks = screen.getAllByTestId('set-check')
-    await user.click(checks[0]) // チンニング 1周目
-    await user.click(checks[1]) // プッシュアップ 1周目
-    await user.click(checks[2]) // チンニング 2周目
+    await user.click(screen.getByLabelText('チンニング 1周目を完了'))
+    await user.click(screen.getByLabelText('プッシュアップ 1周目を完了'))
+    await user.click(screen.getByLabelText('チンニング 2周目を完了')) // 1周目が終わると2周目が開く
     await user.click(screen.getByText('完了して保存'))
 
     await waitFor(() => expect(getMockTable('records')).toHaveLength(1))
@@ -232,10 +231,43 @@ describe('サーキット', () => {
     await user.click(screen.getByText('トレーニングを開始する'))
     await user.click(screen.getByLabelText('周回を減らす'))
     expect(screen.getByText('2 周')).toBeInTheDocument()
-    expect(screen.getAllByTestId('set-check')).toHaveLength(4)
+    expect(screen.getAllByText(/周目$/)).toHaveLength(2)
     await user.click(screen.getByLabelText('周回を増やす'))
     await user.click(screen.getByLabelText('周回を増やす'))
-    expect(screen.getAllByTestId('set-check')).toHaveLength(8)
+    expect(screen.getAllByText(/周目$/)).toHaveLength(4)
+    await user.click(screen.getByLabelText('4周目を開く'))
+    expect(screen.getByLabelText('チンニング 4周目を完了')).toBeInTheDocument() // 増えた周にも全種目が入る
+    expect(screen.getByLabelText('プッシュアップ 4周目を完了')).toBeInTheDocument()
+  })
+
+  it('サーキットは現在の周だけ開き、ほかの周は1行に畳まれてタップで開閉できる', async () => {
+    const user = await openNewPlan()
+    await user.type(screen.getByLabelText('プラン名'), 'サーキット')
+    await addCircuitViaPicker(user, 'チンニング', 'プッシュアップ')
+    await user.click(screen.getByText('保存'))
+    await waitFor(() => expect(savedPlan('サーキット')).toBeTruthy())
+
+    await user.click(screen.getByText('ワークアウト'))
+    await user.click(screen.getByRole('radio', { name: /サーキット/ }))
+    await user.click(screen.getByText('トレーニングを開始する'))
+
+    expect(screen.getByLabelText('チンニング 1周目を完了')).toBeInTheDocument()
+    expect(screen.queryByLabelText('チンニング 2周目を完了')).not.toBeInTheDocument()
+    expect(screen.getByLabelText('2周目を開く')).toHaveAttribute('aria-expanded', 'false')
+
+    // 畳まれた周も、タップで開いて先に記録できる
+    await user.click(screen.getByLabelText('2周目を開く'))
+    expect(screen.getByLabelText('チンニング 2周目を完了')).toBeInTheDocument()
+    await user.click(screen.getByLabelText('2周目を閉じる'))
+    expect(screen.queryByLabelText('チンニング 2周目を完了')).not.toBeInTheDocument()
+
+    // 1周目が終わると、1周目は畳まれて「完了」表示になり、2周目が開く
+    await user.click(screen.getByLabelText('チンニング 1周目を完了'))
+    await user.click(screen.getByLabelText('プッシュアップ 1周目を完了'))
+    expect(screen.queryByLabelText('チンニング 1周目を完了')).not.toBeInTheDocument()
+    expect(screen.getByLabelText('1周目を開く')).toHaveTextContent('2/2')
+    expect(screen.getByLabelText('チンニング 2周目を完了')).toBeInTheDocument()
+    expect(screen.queryByLabelText('チンニング 3周目を完了')).not.toBeInTheDocument()
   })
 
   it('プラン詳細でも種目ごとのセット数ではなく、共通の周回数・運動・休憩を1回だけ表示する', async () => {
