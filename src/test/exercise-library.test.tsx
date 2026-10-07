@@ -11,7 +11,7 @@ vi.mock('../lib/supabase', () => import('./__mocks__/supabase'))
 import FitTrack from '../components/FitTrack'
 import { addExercisesViaPicker, createInPicker, editorExerciseNames, selectInPicker } from './helpers'
 import {
-  BUILTIN_EXERCISES, applyLibraryToRecords, buildLibrary, buildNameIndex, isNameTaken, matchesMuscle, mergeInPlans, mergeInRecords, normName
+  BUILTIN_EXERCISES, applyLibraryToRecords, buildLibrary, buildNameIndex, isNameTaken, matchesMuscle, nameConflictMessage, mergeInPlans, mergeInRecords, normName
 } from '../lib/exerciseLibrary'
 import type { Exercise, SessionExercise, WorkoutRecord } from '../types'
 
@@ -60,6 +60,8 @@ describe('標準カタログ', () => {
     expect(index.get(normName('ＨＩＩＴ（バーピー）'))).toBe('sys:hiit-burpee')
     expect(isNameTaken(buildLibrary([]), 'プッシュアップ ')).toBe(true)
     expect(isNameTaken(buildLibrary([]), '新しい種目')).toBe(false)
+    expect(nameConflictMessage(buildLibrary([]), 'プッシュアップ')).toBe('同じ名前の種目が既にあります')
+    expect(nameConflictMessage(buildLibrary([]), 'ヒップリフト')).toContain('グルートブリッジ') // 別名で重複した場合は既存の種目名を示す
   })
 
   it('ID の無い旧記録は名前から種目に結び付き、名前は種目マスタの名前に揃う', () => {

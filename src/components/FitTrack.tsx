@@ -9,7 +9,7 @@ import { planFromRow, planToRow, uuid, type WorkoutPlanRow } from '../lib/plans'
 import { UnsavedGuardContext, type UnsavedGuard } from '../lib/unsavedGuard'
 import { APP_SCROLL_ID, DiscardDialog } from './ui'
 import {
-  applyLibraryToPlans, applyLibraryToRecords, buildLibrary, buildNameIndex, defFromRow, defToRow, isNameTaken,
+  applyLibraryToPlans, applyLibraryToRecords, buildLibrary, buildNameIndex, defFromRow, defToRow, nameConflictMessage,
   mergeInPlans, mergeInRecords, unresolvedPlanNames, unresolvedRecordNames, type ExerciseRow
 } from '../lib/exerciseLibrary'
 import { summarizeExercises } from '../lib/exerciseStats'
@@ -178,7 +178,8 @@ export default function FitTrack({ userId }: { userId: string }) {
     create: async (input: ExerciseInput) => {
       const name = input.name.trim()
       if (!name) return '種目名を入力してください'
-      if (isNameTaken(buildLibrary(customRef.current), name)) return '同じ名前の種目が既にあります'
+      const conflict = nameConflictMessage(buildLibrary(customRef.current), name)
+      if (conflict) return conflict
       if (!exercisesAvailable.current) return '種目テーブルがありません。Supabase に migration 004（exercises）を適用してください'
       const def: ExerciseDef = { id: uuid(), builtin: false, ...input, name }
       const { error } = await supabase.from('exercises').insert(defToRow(def, userId))
@@ -189,7 +190,8 @@ export default function FitTrack({ userId }: { userId: string }) {
     update: async (id, input) => {
       const name = input.name.trim()
       if (!name) return '種目名を入力してください'
-      if (isNameTaken(buildLibrary(customRef.current), name, id)) return '同じ名前の種目が既にあります'
+      const conflict = nameConflictMessage(buildLibrary(customRef.current), name, id)
+      if (conflict) return conflict
       const { error } = await supabase.from('exercises')
         .update({ name, muscle: input.muscle, kind: input.kind, equipment_type: input.equipmentType, note: input.note })
         .eq('id', id).eq('user_id', userId)
