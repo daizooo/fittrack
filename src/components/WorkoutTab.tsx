@@ -456,20 +456,19 @@ export default function WorkoutTab(props: WorkoutTabProps) {
             {selected.warmup.length > 0 && (
               <div className="text-xs text-amber-700 font-bold flex items-center gap-1 pb-1"><Sunrise size={12} />ウォームアップ {selected.warmup.length}項目</div>
             )}
-            {segmentExercises(selected.exercises).map(seg => {
-              if (seg.kind === 'circuit') {
+            {selected.exercises.map((ex, i) => {
+              if (ex.type === 'circuit') {
                 return (
-                  <div key={seg.group} className="text-sm text-gray-700 flex items-center justify-between py-0.5 border-l-2 border-emerald-400 pl-2 -ml-2">
+                  <div key={ex.id} className="text-sm text-gray-700 flex items-center justify-between py-0.5 border-l-2 border-emerald-400 pl-2 -ml-2">
                     <div className="flex items-center gap-2 min-w-0">
-                      <span className="text-[8px] bg-emerald-100 text-emerald-600 px-1 rounded font-black flex-shrink-0">CIR</span>
-                      <span className="truncate">{seg.items.map(x => x.name).join(' → ')}</span>
+                      <span className="text-[8px] bg-emerald-100 text-emerald-600 px-1 rounded font-black flex-shrink-0">サーキット</span>
+                      <span className="truncate">{(ex.stations ?? []).map(x => x.name).join(' → ')}</span>
                     </div>
-                    <span className="text-gray-400 text-xs flex-shrink-0 ml-2">{seg.items[0].targetSets}周</span>
+                    <span className="text-gray-400 text-xs flex-shrink-0 ml-2">{ex.targetSets}周</span>
                   </div>
                 )
               }
-              const ex = seg.items[0]
-              const next = selected.exercises[seg.start + 1]
+              const next = selected.exercises[i + 1]
               const inSS = !!ex.supersetGroup
               const linked = inSS && next?.supersetGroup === ex.supersetGroup
               return (

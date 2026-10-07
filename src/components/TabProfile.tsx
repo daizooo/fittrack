@@ -279,9 +279,12 @@ export default function TabProfile({
     const affected: string[] = []
     plans.forEach(plan => {
       plan.exercises.forEach(ex => {
-        if (ex.equipmentType === equipId) {
+        if (ex.equipmentType === equipId && ex.type !== 'circuit') {
           affected.push(`${plan.name}: ${ex.name}`)
         }
+        ;(ex.stations ?? []).forEach(st => {
+          if (st.equipmentType === equipId) affected.push(`${plan.name}: ${st.name}`)
+        })
       })
     })
     if (affected.length > 0) {

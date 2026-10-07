@@ -1,4 +1,4 @@
-export type ExerciseType = 'normal' | 'duration' | 'tabata'
+export type ExerciseType = 'normal' | 'duration' | 'tabata' | 'circuit'
 export type RecordType = 'workout' | 'rest'
 export type TimerType = 'work' | 'rest' | 'tabata_work' | 'tabata_rest'
 
@@ -36,7 +36,19 @@ export interface Exercise {
   tabataRest?: number
   tabataCycles?: number
   supersetGroup?: string          // exercises sharing the same non-empty value are performed as a superset
-  circuit?: boolean               // true = サーキットの1ステーション（supersetGroup を共有する連続した種目が1つのサーキット）
+  /**
+   * type === 'circuit' のときの種目リスト。サーキット自体が運動・休憩・周回数を1つだけ持つ:
+   *   defaultReps = 運動秒数 / interval = 休憩秒数 / targetSets = 周回数（種目ごとには持たない）
+   */
+  stations?: CircuitStation[]
+}
+
+/** サーキットの1種目。セット数・回数・休憩は持たず、機材と負荷だけを持つ */
+export interface CircuitStation {
+  id: string
+  name: string
+  equipmentType: string
+  defaultWeight: number
 }
 
 /** ワークアウト前後のストレッチ1項目 */
@@ -68,6 +80,8 @@ export interface SetData {
 }
 
 export interface SessionExercise extends Exercise {
+  /** サーキットの種目。実施時は種目ごとの記録に展開し、supersetGroup にサーキットの ID を入れる */
+  circuit?: boolean
   inherited: boolean
   options: EquipmentOption[]
   sets: SetData[]

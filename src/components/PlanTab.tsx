@@ -5,14 +5,14 @@ import {
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import {
-  CIRCUIT_DEFAULTS, createCircuitStation, createEmptyPlan, estimatePlanMinutes, lastPerformedMap,
-  newId, planToRow, segmentExercises, uuid
+  createCircuit, createEmptyPlan, createStation, estimatePlanMinutes, lastPerformedMap,
+  newId, planToRow, uuid
 } from '../lib/plans'
 import { generateEquipmentOptions } from '../lib/equipmentUtils'
 import { useUnsavedGuard } from '../lib/unsavedGuard'
 import { daysAgo, formatDaysAgo } from '../lib/dates'
 import { DiscardDialog, NumberField, Stepper, scrollAppToTop } from './ui'
-import type { EquipmentItem, Exercise, Stretch, StretchPhase, WorkoutPlan, WorkoutRecord } from '../types'
+import type { CircuitStation, EquipmentItem, Exercise, Stretch, StretchPhase, WorkoutPlan, WorkoutRecord } from '../types'
 
 // ─── Stretch presets ─────────────────────────────────────────────────────────
 
@@ -142,9 +142,9 @@ const selectCls = 'w-full h-10 bg-gray-50 border border-gray-200 rounded-lg px-2
 
 /** 使用する機材と、その機材の負荷（チューブの色・本数など）を選ぶ */
 const EquipmentFields = ({ ex, equipment, onChange }: {
-  ex: Exercise
+  ex: Pick<Exercise, 'equipmentType' | 'defaultWeight'>
   equipment: EquipmentItem[]
-  onChange: (patch: Partial<Exercise>) => void
+  onChange: (patch: Partial<Pick<Exercise, 'equipmentType' | 'defaultWeight'>>) => void
 }) => {
   const loadItems = equipment.filter(e => e.category === 'load')
   const item = loadItems.find(e => e.id === ex.equipmentType)
@@ -215,43 +215,18 @@ const PlanEditor = ({ initial, isNew, equipment, existingNames, onCancel, onSave
     }]
   }))
 
-  // 単独の種目・サーキットを「ひとまとまり」として並べ替え／削除する
-  const moveSegment = (segIdx: number, dir: -1 | 1) => setDraft(prev => {
-    const segs = segmentExercises(prev.exercises)
-    const to = segIdx + dir
-    if (to < 0 || to >= segs.length) return prev
-    ;[segs[segIdx], segs[to]] = [segs[to], segs[segIdx]]
-    return { ...prev, exercises: segs.flatMap(sg => sg.items) }
-  })
-  const removeSegment = (segIdx: number) => setDraft(prev => ({
-    ...prev,
-    exercises: segmentExercises(prev.exercises).filter((_, i) => i !== segIdx).flatMap(sg => sg.items)
-  }))
+  const moveExercise = (idx: number, dir: -1 | 1) => setDraft(prev => ({ ...prev, exercises: moveItem(prev.exercises, idx, dir) }))
+  const removeExercise = (exId: string) => setDraft(prev => ({ ...prev, exercises: prev.exercises.filter(e => e.id !== exId) }))
 
-  // サーキット: 運動秒数・休憩・周回数は全ステーション共通なので、まとめて書き換える
-  const addCircuit = () => setDraft(prev => {
-    const group = newId('ci')
-    return { ...prev, exercises: [...prev.exercises, createCircuitStation(group), createCircuitStation(group)] }
-  })
-  const patchCircuit = (group: string, patch: Partial<Exercise>) => setDraft(prev => ({
-    ...prev,
-    exercises: prev.exercises.map(e => (e.circuit && e.supersetGroup === group ? { ...e, ...patch } : e))
-  }))
-  const addStation = (group: string) => setDraft(prev => {
-    const last = prev.exercises.reduce((acc, e, i) => (e.circuit && e.supersetGroup === group ? i : acc), -1)
-    if (last < 0) return prev
-    const { targetSets, defaultReps, interval } = prev.exercises[last]
-    const next = [...prev.exercises]
-    next.splice(last + 1, 0, createCircuitStation(group, { targetSets, defaultReps, interval }))
-    return { ...prev, exercises: next }
-  })
-  const moveStation = (idx: number, dir: -1 | 1) => setDraft(prev => {
-    const here = prev.exercises[idx]
-    const there = prev.exercises[idx + dir]
-    if (!here?.circuit || !there?.circuit || here.supersetGroup !== there.supersetGroup) return prev
-    return { ...prev, exercises: moveItem(prev.exercises, idx, dir) }
-  })
-  const removeStation = (exId: string) => setDraft(prev => ({ ...prev, exercises: prev.exercises.filter(e => e.id !== exId) }))
+  // サーキット: 運動秒数(defaultReps)・休憩(interval)・周回数(targetSets)はサーキットが1つだけ持つ
+  const addCircuit = () => setDraft(prev => ({ ...prev, exercises: [...prev.exercises, createCircuit()] }))
+  const patchStations = (circuitId: string, fn: (list: CircuitStation[]) => CircuitStation[]) =>
+    setDraft(prev => ({
+      ...prev,
+      exercises: prev.exercises.map(e => (e.id === circuitId ? { ...e, stations: fn(e.stations ?? []) } : e))
+    }))
+  const patchStation = (circuitId: string, stId: string, patch: Partial<CircuitStation>) =>
+    patchStations(circuitId, list => list.map(st => (st.id === stId ? { ...st, ...patch } : st)))
 
   const linkSuperset = (exId1: string, exId2: string) => setDraft(prev => {
     const ex1 = prev.exercises.find(e => e.id === exId1)
@@ -289,11 +264,17 @@ const PlanEditor = ({ initial, isNew, equipment, existingNames, onCancel, onSave
     const name = draft.name.trim()
     if (!name) { setError('プラン名を入力してください'); return }
     if (existingNames.includes(name)) { setError('同じ名前のプランが既にあります'); return }
-    if (draft.exercises.some(ex => !ex.name.trim())) { setError('種目名が空の種目があります'); return }
+    if (draft.exercises.some(ex => ex.type !== 'circuit' && !ex.name.trim())) { setError('種目名が空の種目があります'); return }
+    if (draft.exercises.some(ex => ex.type === 'circuit' && !(ex.stations ?? []).length)) { setError('サーキットに種目がありません'); return }
+    if (draft.exercises.some(ex => (ex.stations ?? []).some(st => !st.name.trim()))) { setError('種目名が空の種目があります'); return }
     const cleaned: WorkoutPlan = {
       ...draft,
       name,
-      exercises: draft.exercises.map(ex => ({ ...ex, name: ex.name.trim() })),
+      exercises: draft.exercises.map(ex => ({
+        ...ex,
+        name: ex.name.trim(),
+        ...(ex.stations ? { stations: ex.stations.map(st => ({ ...st, name: st.name.trim() })) } : {})
+      })),
       warmup: draft.warmup.filter(s => s.name.trim()).map(s => ({ ...s, name: s.name.trim() })),
       cooldown: draft.cooldown.filter(s => s.name.trim()).map(s => ({ ...s, name: s.name.trim() }))
     }
@@ -305,7 +286,6 @@ const PlanEditor = ({ initial, isNew, equipment, existingNames, onCancel, onSave
   }
 
   const numCls = 'w-full h-10 bg-gray-50 border border-gray-200 rounded-lg px-2 text-sm font-bold outline-none text-center'
-  const segs = segmentExercises(draft.exercises)
 
   return (
     <div className="pb-28 max-w-2xl mx-auto p-5 bg-gray-50">
@@ -340,65 +320,65 @@ const PlanEditor = ({ initial, isNew, equipment, existingNames, onCancel, onSave
 
       <h3 className="font-black text-gray-800 text-sm flex items-center gap-1.5 mb-3 px-1"><ListChecks size={16} className="text-blue-500" />種目</h3>
       <div className="space-y-0 mb-6">
-        {segs.map((seg, segIdx) => {
+        {draft.exercises.map((ex, idx) => {
           const moveBtns = (
             <>
-              <button onClick={() => moveSegment(segIdx, -1)} disabled={segIdx === 0} aria-label="上へ" className="p-1 text-gray-400 disabled:opacity-30"><ChevronUp size={18} /></button>
-              <button onClick={() => moveSegment(segIdx, 1)} disabled={segIdx === segs.length - 1} aria-label="下へ" className="p-1 text-gray-400 disabled:opacity-30"><ChevronDown size={18} /></button>
+              <button onClick={() => moveExercise(idx, -1)} disabled={idx === 0} aria-label="上へ" className="p-1 text-gray-400 disabled:opacity-30"><ChevronUp size={18} /></button>
+              <button onClick={() => moveExercise(idx, 1)} disabled={idx === draft.exercises.length - 1} aria-label="下へ" className="p-1 text-gray-400 disabled:opacity-30"><ChevronDown size={18} /></button>
             </>
           )
 
           // ── サーキット ──
-          if (seg.kind === 'circuit') {
-            const common = seg.items[0]
-            const totalMin = Math.max(1, Math.round(seg.items.length * common.targetSets * (common.defaultReps + common.interval) / 60))
+          if (ex.type === 'circuit') {
+            const stations = ex.stations ?? []
+            const totalMin = Math.max(1, Math.round(stations.length * ex.targetSets * (ex.defaultReps + ex.interval) / 60))
             return (
-              <div key={seg.group} className="bg-white p-4 rounded-2xl shadow-sm border-2 border-emerald-300 mb-4">
+              <div key={ex.id} className="bg-white p-4 rounded-2xl shadow-sm border-2 border-emerald-300 mb-4">
                 <div className="flex items-center gap-1 mb-3">
                   <Repeat size={16} className="text-emerald-500 mr-1" />
                   <span className="flex-1 font-black text-gray-800 text-sm">サーキット</span>
                   {moveBtns}
-                  <button onClick={() => removeSegment(segIdx)} aria-label="サーキットを削除" className="p-1 text-gray-400 hover:text-red-500 transition-colors"><Trash2 size={18} /></button>
+                  <button onClick={() => removeExercise(ex.id)} aria-label="サーキットを削除" className="p-1 text-gray-400 hover:text-red-500 transition-colors"><Trash2 size={18} /></button>
                 </div>
 
                 <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-100 mb-3">
-                  <p className="text-[10px] font-bold text-emerald-700 mb-2">全種目で共通の設定（ここで一括設定）</p>
+                  <p className="text-[10px] font-bold text-emerald-700 mb-2">全種目で共通の設定</p>
                   <div className="grid grid-cols-2 gap-3 mb-3">
                     <div>
                       <label className="text-[10px] font-bold text-orange-600 block mb-1">運動 (秒)</label>
-                      <NumberField value={common.defaultReps} min={1} max={999} aria-label="サーキットの運動秒数" onChange={v => patchCircuit(seg.group, { defaultReps: v })} className="w-full h-10 bg-white border border-orange-200 rounded-lg px-2 text-sm font-bold outline-none text-center text-orange-600" />
+                      <NumberField value={ex.defaultReps} min={1} max={999} aria-label="サーキットの運動秒数" onChange={v => updateExercise(ex.id, 'defaultReps', v)} className="w-full h-10 bg-white border border-orange-200 rounded-lg px-2 text-sm font-bold outline-none text-center text-orange-600" />
                     </div>
                     <div>
                       <label className="text-[10px] font-bold text-blue-600 block mb-1">休憩 (秒)</label>
-                      <NumberField value={common.interval} min={0} max={600} aria-label="サーキットの休憩秒数" onChange={v => patchCircuit(seg.group, { interval: v })} className="w-full h-10 bg-white border border-blue-200 rounded-lg px-2 text-sm font-bold outline-none text-center text-blue-600" />
+                      <NumberField value={ex.interval} min={0} max={600} aria-label="サーキットの休憩秒数" onChange={v => updateExercise(ex.id, 'interval', v)} className="w-full h-10 bg-white border border-blue-200 rounded-lg px-2 text-sm font-bold outline-none text-center text-blue-600" />
                     </div>
                   </div>
                   <label className="text-[10px] font-bold text-gray-600 block mb-1">周回数</label>
-                  <Stepper value={common.targetSets} min={1} max={20} label="周回数" onChange={v => patchCircuit(seg.group, { targetSets: v })} />
-                  <p className="text-[10px] text-emerald-700/80 mt-2">{seg.items.length}種目 × {common.targetSets}周 ＝ 約{totalMin}分</p>
+                  <Stepper value={ex.targetSets} min={1} max={20} label="周回数" onChange={v => updateExercise(ex.id, 'targetSets', v)} />
+                  <p className="text-[10px] text-emerald-700/80 mt-2">{stations.length}種目 × {ex.targetSets}周 ＝ 約{totalMin}分</p>
                 </div>
 
                 <div className="space-y-2 mb-3">
-                  {seg.items.map((st, i) => (
+                  {stations.map((st, i) => (
                     <div key={st.id} className="bg-gray-50 rounded-xl p-2.5 border border-gray-100">
                       <div className="flex items-center gap-1.5 mb-2">
-                        <span className="text-emerald-500 opacity-70 font-bold text-sm w-5">{seg.start + i + 1}.</span>
+                        <span className="text-emerald-500 opacity-70 font-bold text-sm w-5">{i + 1}.</span>
                         <input
                           type="text" value={st.name} placeholder="種目名"
                           aria-label="種目名"
-                          onChange={e => patchExercise(st.id, { name: e.target.value })}
+                          onChange={e => patchStation(ex.id, st.id, { name: e.target.value })}
                           className="flex-1 min-w-0 bg-transparent font-bold text-gray-800 border-b border-gray-200 pb-0.5 outline-none focus:border-blue-500"
                         />
-                        <button onClick={() => moveStation(seg.start + i, -1)} disabled={i === 0} aria-label="種目を上へ" className="p-1 text-gray-400 disabled:opacity-30"><ChevronUp size={16} /></button>
-                        <button onClick={() => moveStation(seg.start + i, 1)} disabled={i === seg.items.length - 1} aria-label="種目を下へ" className="p-1 text-gray-400 disabled:opacity-30"><ChevronDown size={16} /></button>
-                        <button onClick={() => removeStation(st.id)} aria-label="種目を削除" className="p-1 text-gray-400 hover:text-red-500"><Trash2 size={15} /></button>
+                        <button onClick={() => patchStations(ex.id, list => moveItem(list, i, -1))} disabled={i === 0} aria-label="種目を上へ" className="p-1 text-gray-400 disabled:opacity-30"><ChevronUp size={16} /></button>
+                        <button onClick={() => patchStations(ex.id, list => moveItem(list, i, 1))} disabled={i === stations.length - 1} aria-label="種目を下へ" className="p-1 text-gray-400 disabled:opacity-30"><ChevronDown size={16} /></button>
+                        <button onClick={() => patchStations(ex.id, list => list.filter(x => x.id !== st.id))} aria-label="種目を削除" className="p-1 text-gray-400 hover:text-red-500"><Trash2 size={15} /></button>
                       </div>
-                      <EquipmentFields ex={st} equipment={equipment} onChange={patch => patchExercise(st.id, patch)} />
+                      <EquipmentFields ex={st} equipment={equipment} onChange={patch => patchStation(ex.id, st.id, patch)} />
                     </div>
                   ))}
                 </div>
 
-                <button onClick={() => addStation(seg.group)} className="w-full py-2.5 border-2 border-dashed border-emerald-200 rounded-xl text-emerald-600 text-xs font-bold flex items-center justify-center gap-1 active:scale-95">
+                <button onClick={() => patchStations(ex.id, list => [...list, createStation()])} className="w-full py-2.5 border-2 border-dashed border-emerald-200 rounded-xl text-emerald-600 text-xs font-bold flex items-center justify-center gap-1 active:scale-95">
                   <Plus size={14} /> このサーキットに種目を追加
                 </button>
               </div>
@@ -406,11 +386,9 @@ const PlanEditor = ({ initial, isNew, equipment, existingNames, onCancel, onSave
           }
 
           // ── 単独の種目 ──
-          const ex = seg.items[0]
-          const idx = seg.start
-          const nextSeg = segs[segIdx + 1]
-          const nextEx = nextSeg?.kind === 'single' ? nextSeg.items[0] : undefined
-          const isLinkedToNext = !!ex.supersetGroup && ex.supersetGroup === nextEx?.supersetGroup
+          const nextEx = draft.exercises[idx + 1]
+          const linkable = nextEx && nextEx.type !== 'circuit' ? nextEx : undefined
+          const isLinkedToNext = !!ex.supersetGroup && ex.supersetGroup === linkable?.supersetGroup
           const isInSuperset = !!ex.supersetGroup
           return (
             <React.Fragment key={ex.id}>
@@ -426,7 +404,7 @@ const PlanEditor = ({ initial, isNew, equipment, existingNames, onCancel, onSave
                     placeholder="種目名"
                   />
                   {moveBtns}
-                  <button onClick={() => removeSegment(segIdx)} aria-label="種目を削除" className="p-1 text-gray-400 hover:text-red-500 transition-colors"><Trash2 size={18} /></button>
+                  <button onClick={() => removeExercise(ex.id)} aria-label="種目を削除" className="p-1 text-gray-400 hover:text-red-500 transition-colors"><Trash2 size={18} /></button>
                 </div>
 
                 <div className="mb-3">
@@ -482,17 +460,17 @@ const PlanEditor = ({ initial, isNew, equipment, existingNames, onCancel, onSave
                   </div>
                 )}
               </div>
-              {nextEx && (
+              {linkable && (
                 <div className="flex items-center justify-center py-1.5">
                   {isLinkedToNext ? (
                     <div className="flex items-center gap-1.5 bg-purple-50 border border-purple-200 rounded-full px-3 py-1">
                       <span className="text-[10px] font-bold text-purple-600">⚡ スーパーセット接続中</span>
-                      <button onClick={() => unlinkSuperset(ex.id, nextEx.id)} className="flex items-center gap-0.5 text-[10px] text-purple-400 hover:text-red-500 font-bold active:scale-95 transition-colors ml-1">
+                      <button onClick={() => unlinkSuperset(ex.id, linkable.id)} className="flex items-center gap-0.5 text-[10px] text-purple-400 hover:text-red-500 font-bold active:scale-95 transition-colors ml-1">
                         <Unlink2 size={11} /> 解除
                       </button>
                     </div>
                   ) : (
-                    <button onClick={() => linkSuperset(ex.id, nextEx.id)} className="flex items-center gap-1 text-[10px] text-gray-400 bg-white border border-dashed border-gray-300 px-3 py-1 rounded-full font-medium hover:border-purple-300 hover:text-purple-500 hover:bg-purple-50 active:scale-95 transition-colors">
+                    <button onClick={() => linkSuperset(ex.id, linkable.id)} className="flex items-center gap-1 text-[10px] text-gray-400 bg-white border border-dashed border-gray-300 px-3 py-1 rounded-full font-medium hover:border-purple-300 hover:text-purple-500 hover:bg-purple-50 active:scale-95 transition-colors">
                       <Link2 size={11} /> スーパーセット接続
                     </button>
                   )}
@@ -542,33 +520,29 @@ const StretchSummary = ({ phase, items }: { phase: StretchPhase; items: Stretch[
 
 export const ExerciseList = ({ exercises }: { exercises: Exercise[] }) => (
   <div className="space-y-0">
-    {segmentExercises(exercises).map(seg => {
+    {exercises.map((ex, idx) => {
       // サーキットは1枚のカードにまとめ、運動・休憩・周回数は共通として1回だけ表示する
-      if (seg.kind === 'circuit') {
-        const c = seg.items[0]
+      if (ex.type === 'circuit') {
         return (
-          <div key={seg.group} className="bg-white p-5 rounded-3xl shadow-sm border border-emerald-200 mb-4">
+          <div key={ex.id} className="bg-white p-5 rounded-3xl shadow-sm border border-emerald-200 mb-4">
             <div className="font-black text-emerald-700 mb-3 flex gap-2 text-lg items-center">
               <Repeat size={18} />サーキット
-              <span className="text-[9px] bg-emerald-100 text-emerald-600 px-1.5 py-0.5 rounded font-black tracking-wider">CIR</span>
             </div>
             <div className="flex flex-wrap gap-2 mb-3">
-              <span className="bg-gray-100 text-gray-600 text-xs font-bold rounded-lg px-3 py-1.5">🔁 {c.targetSets}周</span>
-              <span className="bg-orange-50 text-orange-600 text-xs font-bold rounded-lg px-3 py-1.5">運動 {c.defaultReps}秒</span>
-              <span className="bg-blue-50 text-blue-600 text-xs font-bold rounded-lg px-3 py-1.5 flex items-center gap-1"><Timer size={12} /> 休憩 {c.interval}秒</span>
+              <span className="bg-gray-100 text-gray-600 text-xs font-bold rounded-lg px-3 py-1.5">🔁 {ex.targetSets}周</span>
+              <span className="bg-orange-50 text-orange-600 text-xs font-bold rounded-lg px-3 py-1.5">運動 {ex.defaultReps}秒</span>
+              <span className="bg-blue-50 text-blue-600 text-xs font-bold rounded-lg px-3 py-1.5 flex items-center gap-1"><Timer size={12} /> 休憩 {ex.interval}秒</span>
             </div>
             <ol className="space-y-1">
-              {seg.items.map((st, i) => (
+              {(ex.stations ?? []).map((st, i) => (
                 <li key={st.id} className="text-sm font-bold text-gray-800 flex gap-2">
-                  <span className="text-emerald-500 opacity-70">{seg.start + i + 1}.</span>{st.name}
+                  <span className="text-emerald-500 opacity-70">{i + 1}.</span>{st.name}
                 </li>
               ))}
             </ol>
           </div>
         )
       }
-      const ex = seg.items[0]
-      const idx = seg.start
       const nextEx = exercises[idx + 1]
       const isInSuperset = !!ex.supersetGroup
       const isLinkedToNext = isInSuperset && nextEx?.supersetGroup === ex.supersetGroup

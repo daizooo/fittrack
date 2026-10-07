@@ -9,6 +9,8 @@ import { resetMockDB, getMockTable, TEST_USER_ID } from './__mocks__/supabase'
 vi.mock('../lib/supabase', () => import('./__mocks__/supabase'))
 
 import FitTrack from '../components/FitTrack'
+import { planFromRow, buildSession } from '../lib/plans'
+import { DEFAULT_LOAD_EQUIPMENT, generateEquipmentOptions } from '../lib/equipmentUtils'
 import type { Exercise } from '../types'
 
 beforeEach(() => {
@@ -113,9 +115,13 @@ describe('サーキット', () => {
     await user.click(screen.getByText('保存'))
     await waitFor(() => expect(savedPlan('サーキット')).toBeTruthy())
     const { exercises } = savedPlan('サーキット')
-    expect(exercises.map(e => e.name)).toEqual(['懸垂', 'プッシュアップ', 'ヒップスラスト'])
-    expect(exercises.every(e => e.circuit && e.type === 'duration' && e.defaultReps === 45 && e.interval === 20 && e.targetSets === 4)).toBe(true)
-    expect(new Set(exercises.map(e => e.supersetGroup)).size).toBe(1)
+    // サーキットは1項目。運動・休憩・周回数は1つだけ持ち、種目は名前と機材・負荷だけ
+    expect(exercises).toHaveLength(1)
+    expect(exercises[0]).toMatchObject({ type: 'circuit', defaultReps: 45, interval: 20, targetSets: 4 })
+    expect(exercises[0].stations?.map(st => st.name)).toEqual(['懸垂', 'プッシュアップ', 'ヒップスラスト'])
+    for (const st of exercises[0].stations!) {
+      expect(Object.keys(st).sort()).toEqual(['defaultWeight', 'equipmentType', 'id', 'name'])
+    }
   })
 
   it('サーキットの種目にも負荷を設定できる', async () => {
@@ -128,7 +134,7 @@ describe('サーキット', () => {
     expect(screen.getAllByLabelText('負荷（初期値）')[1]).toHaveValue('0')
   })
 
-  it('サーキット内の並べ替え・削除、ブロックごとの移動ができる', async () => {
+  it('サーキット内の並べ替え・削除、サーキットごとの移動ができる', async () => {
     const user = await openNewPlan()
     await user.click(screen.getByText('種目を追加'))
     await user.type(screen.getAllByLabelText('種目名')[0], '単独A')
@@ -141,13 +147,23 @@ describe('サーキット', () => {
     names = screen.getAllByLabelText('種目名')
     expect(names.map(n => (n as HTMLInputElement).value)).toEqual(['単独A', 'S2', 'S1'])
 
-    // サーキットごと上へ（単独Aの前に出る。ステーションが分断されない）
+    // サーキットごと上へ（単独Aの前に出る）
     const ups = screen.getAllByLabelText('上へ')
     await user.click(ups[ups.length - 1])
     expect(screen.getAllByLabelText('種目名').map(n => (n as HTMLInputElement).value)).toEqual(['S2', 'S1', '単独A'])
 
     await user.click(screen.getAllByLabelText('種目を削除')[0])
     expect(screen.getAllByLabelText('種目名').map(n => (n as HTMLInputElement).value)).toEqual(['S1', '単独A'])
+  })
+
+  it('サーキットに種目が無いと保存できない', async () => {
+    const user = await openNewPlan()
+    await user.type(screen.getByLabelText('プラン名'), '空サーキット')
+    await user.click(screen.getByText('サーキット追加'))
+    await user.click(screen.getAllByLabelText('種目を削除')[0])
+    await user.click(screen.getAllByLabelText('種目を削除')[0])
+    await user.click(screen.getByText('保存'))
+    expect(screen.getByRole('alert')).toHaveTextContent('サーキットに種目がありません')
   })
 
   it('セッションでは各ステーションの完了後に休憩が始まる（スーパーセットと違う）', async () => {
@@ -175,6 +191,34 @@ describe('サーキット', () => {
     // 1つ目のステーションの完了 → グループ最後の種目ではないが休憩が始まる
     await user.click(screen.getAllByTestId('set-check')[0])
     expect(screen.getByText('REST')).toBeInTheDocument()
+  })
+
+  it('記録は種目ごとに保存される（サーキット1回というまとまりにはしない）', async () => {
+    const user = await openNewPlan()
+    await user.type(screen.getByLabelText('プラン名'), 'サーキット')
+    await user.click(screen.getByText('サーキット追加'))
+    const names = screen.getAllByLabelText('種目名')
+    await user.type(names[0], '懸垂')
+    await user.type(names[1], 'プッシュアップ')
+    await user.click(screen.getByText('保存'))
+    await waitFor(() => expect(savedPlan('サーキット')).toBeTruthy())
+
+    await user.click(screen.getByText('ワークアウト'))
+    await user.click(screen.getByRole('radio', { name: /サーキット/ }))
+    await user.click(screen.getByText('トレーニングを開始する'))
+    const checks = screen.getAllByTestId('set-check')
+    await user.click(checks[0]) // 懸垂 1周目
+    await user.click(checks[1]) // プッシュアップ 1周目
+    await user.click(checks[2]) // 懸垂 2周目
+    await user.click(screen.getByText('完了して保存'))
+
+    await waitFor(() => expect(getMockTable('records')).toHaveLength(1))
+    const rec = getMockTable('records')[0] as unknown as { category: string; exercises: { name: string; type: string; sets: { reps: number; completed: boolean }[] }[] }
+    expect(rec.category).toBe('サーキット')
+    expect(rec.exercises.map(e => e.name)).toEqual(['懸垂', 'プッシュアップ'])
+    expect(rec.exercises[0].sets.map(x => x.completed)).toEqual([true, true, false])
+    expect(rec.exercises[1].sets.map(x => x.completed)).toEqual([true, false, false])
+    expect(rec.exercises.every(e => e.type === 'duration' && e.sets.every(x => x.reps === 40))).toBe(true)
   })
 
   it('セッションで周回数を増減すると全種目の周が増減し、記録は種目ごとに残る', async () => {
@@ -277,5 +321,54 @@ describe('編集中のタブ移動・キャンセルは破棄確認を挟む', (
     await user.type(screen.getByPlaceholderText('例: 心拍計'), 'メモ')
     await user.click(screen.getByText('プラン'))
     expect(screen.getByRole('alertdialog')).toBeInTheDocument()
+  })
+})
+
+
+describe('サーキットのデータ（旧形式の移行・セッション展開）', () => {
+  const tube = DEFAULT_LOAD_EQUIPMENT.find(e => e.id === 'assist')!
+  const optionsMap = new Map([['assist', generateEquipmentOptions(tube)]])
+  const circuit = (): Exercise => ({
+    id: 'ci-1', name: 'サーキット', type: 'circuit', targetSets: 3, defaultReps: 40, interval: 20,
+    defaultWeight: 0, equipmentType: 'bodyweight',
+    stations: [
+      { id: 's1', name: '懸垂', equipmentType: 'assist', defaultWeight: -24 },
+      { id: 's2', name: 'プッシュアップ', equipmentType: 'bodyweight', defaultWeight: 0 }
+    ]
+  })
+
+  it('旧形式（種目ごとに秒数・休憩を持つ）は1つのサーキットに変換される', () => {
+    const legacy = (id: string, name: string) => ({
+      id, name, type: 'duration', targetSets: 3, defaultReps: 40, defaultWeight: 0, interval: 20,
+      equipmentType: 'bodyweight', supersetGroup: 'g1', circuit: true
+    })
+    const plan = planFromRow({
+      id: 'p', name: 'x', warmup: null, cooldown: null, sort_order: 1,
+      exercises: [{ id: 'n', name: '通常', type: 'normal', targetSets: 3, defaultReps: 10, defaultWeight: 0, interval: 60, equipmentType: 'bodyweight' }, legacy('a', '懸垂'), legacy('b', 'ディップス')] as unknown as Exercise[]
+    })
+    expect(plan.exercises).toHaveLength(2)
+    expect(plan.exercises[1]).toMatchObject({ type: 'circuit', targetSets: 3, defaultReps: 40, interval: 20 })
+    expect(plan.exercises[1].stations?.map(s => s.name)).toEqual(['懸垂', 'ディップス'])
+  })
+
+  it('セッションでは種目ごとの記録（周回数＝セット数）に展開され、初期負荷が入る', () => {
+    const session = buildSession({ id: 'p', name: 'サーキット', exercises: [circuit()], warmup: [], cooldown: [], sortOrder: 1 }, [], optionsMap)
+    expect(session.exercises.map(e => e.name)).toEqual(['懸垂', 'プッシュアップ'])
+    expect(session.exercises[0].sets).toHaveLength(3)
+    expect(session.exercises[0].sets.map(s => [s.reps, s.weight])).toEqual([[40, -24], [40, -24], [40, -24]])
+    expect(session.exercises[0].options.map(o => o.weight)).toContain(-47)
+    expect(session.exercises.every(e => e.interval === 20 && e.circuit)).toBe(true)
+  })
+
+  it('前回の記録から負荷だけを引き継ぐ（周回数・秒数はプランの現在の設定）', () => {
+    const prev = buildSession({ id: 'p', name: 'サーキット', exercises: [circuit()], warmup: [], cooldown: [], sortOrder: 1 }, [], optionsMap)
+    prev.exercises[0].sets.forEach(s => { s.weight = -47; s.completed = true })
+    const record = { ...prev, id: 1, type: 'workout' as const, stretches: null }
+    const c = circuit()
+    c.targetSets = 4
+    c.defaultReps = 45
+    const next = buildSession({ id: 'p', name: 'サーキット', exercises: [c], warmup: [], cooldown: [], sortOrder: 1 }, [record], optionsMap)
+    expect(next.exercises[0].inherited).toBe(true)
+    expect(next.exercises[0].sets.map(s => [s.reps, s.weight])).toEqual([[45, -47], [45, -47], [45, -47], [45, -47]])
   })
 })
