@@ -98,7 +98,7 @@ describe('サーキットのタイマーは次の種目へ自動で進む', () =
   it('完了済みの種目は飛ばして進む', async () => {
     await startCircuitWorkout()
     fireEvent.click(screen.getByLabelText('スクワット 1周目を完了')) // 手動で完了（休憩タイマーが始まる）
-    fireEvent.click(screen.getByLabelText('タイマーを止める'))
+    fireEvent.click(screen.getByLabelText('スクワット 1周目のタイマーを止める')) // 手動完了の休憩は、その行の中に出る
     fireEvent.click(screen.getByLabelText('プッシュアップ 1周目のタイマーを開始'))
     await advance(6_000 + 1_000 + 3_500) // スクワット1周目は飛ばして、プッシュアップ2周目へ
     expect(working()).toBeInTheDocument()
@@ -149,7 +149,7 @@ describe('動いているタイマーが、どの種目か分かる', () => {
     expect(moved.className).toContain('bg-orange-500')
   })
 
-  it('タイマーは種目の行の中にだけ出て、下に浮かぶ表示は出ない（休憩だけのときを除く）', async () => {
+  it('タイマーは種目の行の中にだけ出て、下に浮かぶ表示は出ない', async () => {
     await startCircuitWorkout()
     fireEvent.click(screen.getByLabelText('プッシュアップ 1周目のタイマーを開始'))
     expect(screen.getAllByRole('timer')).toHaveLength(1)
@@ -160,9 +160,28 @@ describe('動いているタイマーが、どの種目か分かる', () => {
     expect(resting()).toBeInTheDocument()
     expect(screen.queryByText('REST')).not.toBeInTheDocument()
 
-    // 行が無い休憩（手動で完了したとき）だけ、下の表示で残り時間を出す
+    // 手動で完了したときの休憩も、その行の中に出る（下の表示は使わない）
     fireEvent.click(screen.getByLabelText('スクワット 1周目を完了'))
-    expect(screen.getByText('REST')).toBeInTheDocument()
+    const row = rowOf(screen.getByRole('timer'))
+    expect(row).toHaveTextContent('スクワット')
+    expect(row).toHaveTextContent('休憩')
+    expect(row.className).toContain('bg-blue-600')
+    expect(screen.queryByText('REST')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('タイマーを止める')).not.toBeInTheDocument()
+  })
+
+  it('サーキット最後の種目のあとの休憩も、その行の中に出る', async () => {
+    await startCircuitWorkout()
+    for (const [name, round] of [['プッシュアップ', 1], ['スクワット', 1], ['プッシュアップ', 2]] as const) {
+      fireEvent.click(screen.getByLabelText(`${name} ${round}周目を完了`))
+      fireEvent.click(screen.getByLabelText(`${name} ${round}周目のタイマーを止める`))
+    }
+    fireEvent.click(screen.getByLabelText('スクワット 2周目のタイマーを開始'))
+    await advance(6_000 + 1_000) // 最後の種目が終わって休憩へ。次の種目は無い
+    const row = rowOf(screen.getByRole('timer'))
+    expect(row).toHaveTextContent('スクワット')
+    expect(row).toHaveTextContent('休憩')
+    expect(resting()).not.toBeInTheDocument()
   })
 
   it('実行中の周を手動で閉じても、タイマーが見えるよう開いたままになる', async () => {

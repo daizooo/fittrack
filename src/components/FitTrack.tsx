@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react'
-import { Dumbbell, CalendarDays, BarChart3, BookOpen, LogOut, User, Play, Pause, Timer, X, AlertTriangle } from 'lucide-react'
+import { Dumbbell, CalendarDays, BarChart3, BookOpen, LogOut, User, X, AlertTriangle } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { generateEquipmentOptions, DEFAULT_LOAD_EQUIPMENT } from '../lib/equipmentUtils'
 import { getAudioCtx, playBeep } from '../lib/audio'
@@ -461,7 +461,9 @@ export default function FitTrack({ userId }: { userId: string }) {
       setTimeout(() => {
         getAudioCtx()
         const end = Date.now() + timerState.interval * 1000
-        setActiveTimer({ ...defaultTimerState, isActive: true, type: 'rest', endTime: end, remaining: timerState.interval, then: next })
+        // 次の種目がある休憩は次の行に、無ければ終えた種目の行に表示する（下に浮かぶ表示は使わない）
+        const rowOfRest = next ? { exIdx: null, setIdx: null } : { exIdx: timerState.exIdx, setIdx: timerState.setIdx }
+        setActiveTimer({ ...defaultTimerState, isActive: true, type: 'rest', endTime: end, remaining: timerState.interval, then: next, ...rowOfRest })
       }, 1000)
     } else if (next) {
       setTimeout(() => startNextStation(next), 1000)
@@ -529,11 +531,6 @@ export default function FitTrack({ userId }: { userId: string }) {
     }
     return () => clearInterval(timerId)
   }, [activeTimer.isActive, activeTimer.paused, activeTimer.endTime]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  // 運動・ストレッチ・サーキットの休憩（次の種目に出る）は、種目の行の中にタイマーを出す。下の浮かぶ表示は、行が無い休憩のときだけ使う
-  const timerShownInRow = activeTimer.stretch !== null
-    || (activeTimer.exIdx !== null && activeTimer.setIdx !== null)
-    || (activeTimer.type === 'rest' && activeTimer.then !== null)
 
   const timerControls: TimerControls = useMemo(
     () => ({ activeTimer, startTimer, startTabataTimer, startStretchTimer, stopTimer, pauseTimer, resumeTimer }),
@@ -684,40 +681,6 @@ export default function FitTrack({ userId }: { userId: string }) {
       </main>
 
       <BottomNav activeTab={activeTab} setActiveTab={requestTab} />
-
-      {activeTimer.isActive && !timerShownInRow && (
-        <div
-          className={`fixed left-1/2 -translate-x-1/2 px-6 py-3 rounded-full shadow-2xl flex items-center gap-4 z-50 animate-in slide-in-from-bottom-5
-            ${activeTimer.type === 'work' || activeTimer.type === 'tabata_work' ? 'bg-orange-600 text-white' :
-              activeTimer.type === 'tabata_rest' ? 'bg-blue-600 text-white' : 'bg-gray-900 text-white'}`}
-          style={{ bottom: 'calc(5rem + env(safe-area-inset-bottom, 0px) + 0.5rem)' }}
-        >
-          {activeTimer.type === 'work' || activeTimer.type === 'tabata_work'
-            ? <Play size={20} className={activeTimer.paused ? '' : activeTimer.remaining <= 5 ? 'animate-bounce' : 'animate-pulse'} fill="currentColor" />
-            : <Timer size={20} className={`text-blue-400 ${activeTimer.paused ? '' : activeTimer.remaining <= 5 ? 'animate-bounce text-red-400' : 'animate-pulse'}`} />}
-          <span className={`font-mono text-3xl font-bold w-16 text-center tracking-tighter ${(activeTimer.type === 'rest' || activeTimer.type === 'tabata_rest') && activeTimer.remaining <= 5 ? 'text-red-400' : ''}`}>{activeTimer.remaining}</span>
-          <div className="flex flex-col items-center justify-center min-w-[3rem]">
-            <span className="text-[10px] font-black tracking-widest whitespace-nowrap opacity-80">
-              {activeTimer.paused ? 'PAUSE' : activeTimer.stretch ? 'STRETCH' : activeTimer.type === 'work' || activeTimer.type === 'tabata_work' ? 'WORK' : 'REST'}
-            </span>
-            {(activeTimer.type === 'tabata_work' || activeTimer.type === 'tabata_rest') && (
-              <span className="text-[9px] font-bold mt-0.5 bg-white/20 px-1.5 py-0.5 rounded text-white tracking-widest">
-                RND {activeTimer.currentCycle}/{activeTimer.tabataCycles}
-              </span>
-            )}
-          </div>
-          <button
-            onClick={activeTimer.paused ? resumeTimer : pauseTimer}
-            aria-label={activeTimer.paused ? 'タイマーを再開' : 'タイマーを一時停止'}
-            className="p-1.5 rounded-full hover:bg-black/20 active:scale-95 transition-transform"
-          >
-            {activeTimer.paused ? <Play size={16} fill="currentColor" /> : <Pause size={16} fill="currentColor" />}
-          </button>
-          <button onClick={stopTimer} aria-label="タイマーを止める" className="p-1.5 rounded-full hover:bg-black/20 active:scale-95 transition-transform">
-            <X size={16} />
-          </button>
-        </div>
-      )}
 
       {showCancelConfirm && (
         <div className="fixed inset-0 bg-gray-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-5">

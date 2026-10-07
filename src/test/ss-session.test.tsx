@@ -176,7 +176,7 @@ describe('FitTrack – SS セット完了・重量操作', () => {
 
     // 左右で1セット扱いのため、左だけではレストタイマーが起動しない
     await new Promise(resolve => setTimeout(resolve, 50))
-    expect(screen.queryByText('REST')).not.toBeInTheDocument()
+    expect(screen.queryByRole('timer')).not.toBeInTheDocument()
   })
 
   it('左右とも1セット目を完了するとレストが始まる', async () => {
@@ -192,7 +192,7 @@ describe('FitTrack – SS セット完了・重量操作', () => {
     })
 
     await waitFor(
-      () => expect(screen.getByText('REST')).toBeInTheDocument(),
+      () => expect(screen.getByRole('timer')).toHaveTextContent('休憩'), // 休憩は終えた種目の行の中に出る
       { timeout: 3000 },
     )
   })

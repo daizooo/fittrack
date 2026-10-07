@@ -192,7 +192,7 @@ describe('サーキット', () => {
 
     // 1つ目のステーションの完了 → グループ最後の種目ではないが休憩が始まる
     await user.click(screen.getAllByTestId('set-check')[0])
-    expect(screen.getByText('REST')).toBeInTheDocument()
+    expect(screen.getByRole('timer')).toHaveTextContent('休憩')
   })
 
   it('記録は種目ごとに保存される（サーキット1回というまとまりにはしない）', async () => {
@@ -264,6 +264,7 @@ describe('サーキット', () => {
     // 1周目が終わると、1周目は畳まれて「完了」表示になり、2周目が開く
     await user.click(screen.getByLabelText('チンニング 1周目を完了'))
     await user.click(screen.getByLabelText('プッシュアップ 1周目を完了'))
+    await user.click(screen.getByLabelText('プッシュアップ 1周目のタイマーを止める')) // 休憩の間は、その行が見えるよう開いたまま
     expect(screen.queryByLabelText('チンニング 1周目を完了')).not.toBeInTheDocument()
     expect(screen.getByLabelText('1周目を開く')).toHaveTextContent('2/2')
     expect(screen.getByLabelText('チンニング 2周目を完了')).toBeInTheDocument()

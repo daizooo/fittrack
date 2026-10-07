@@ -107,21 +107,27 @@ const StretchSection = ({ phase, session, setSession, timer }: {
 
 // ─── 行ごとのタイマー表示 ────────────────────────────────────────────────────
 
-type RowTimerState = 'running' | 'next' | null
+type RowTimerState = 'running' | 'resting' | 'next' | null
 
-/** この行（種目 exIdx の setIdx 番目）が、いまタイマー実行中か・休憩のあとに始まる「次」か */
+/**
+ * この行（種目 exIdx の setIdx 番目）のタイマーの状態。
+ * running = 運動中、resting = この行を終えたあとの休憩、next = 休憩のあとに始まる次の種目
+ */
 const rowTimerState = (t: TimerState, exIdx: number, setIdx: number): RowTimerState => {
   if (!t.isActive || t.stretch) return null
-  if (t.exIdx === exIdx && t.setIdx === setIdx) return 'running'
+  if (t.exIdx === exIdx && t.setIdx === setIdx) return t.type === 'rest' ? 'resting' : 'running'
   if (t.type === 'rest' && t.then?.exIdx === exIdx && t.then.setIdx === setIdx) return 'next'
   return null
 }
 
-/** 実行中の行は、オレンジのベタ塗り＋白文字で、ほかの行より明らかに目立たせる */
-const ROW_RUNNING = 'bg-orange-500 text-white shadow-lg shadow-orange-500/40 ring-2 ring-orange-300'
+/** 運動中はオレンジ、休憩中は青のベタ塗り＋白文字で、ほかの行より明らかに目立たせる */
+const ROW_ACTIVE = {
+  running: 'bg-orange-500 text-white shadow-lg shadow-orange-500/40 ring-2 ring-orange-300',
+  resting: 'bg-blue-600 text-white shadow-lg shadow-blue-600/40 ring-2 ring-blue-300'
+}
 
 /**
- * タイマーが動いている行を強調する。dim=true の行（同じサーキットのほかの行）は薄くして、実行中の行を際立たせる。
+ * タイマーが動いている行を強調する。dim=true の行（同じサーキットのほかの行）は薄くして、動いている行を際立たせる。
  * サーキットで次の種目へ進んだときは、その行が画面内に入るようスクロールする。
  */
 const TimedRow = ({ state, dim, idleBg, className, children }: { state: RowTimerState; dim: boolean; idleBg: string; className: string; children: React.ReactNode }) => {
@@ -129,22 +135,23 @@ const TimedRow = ({ state, dim, idleBg, className, children }: { state: RowTimer
   useEffect(() => {
     if (state === 'running') ref.current?.scrollIntoView?.({ block: 'center', behavior: 'smooth' })
   }, [state])
-  return <div ref={ref} className={`${className} ${state === 'running' ? ROW_RUNNING : idleBg} ${dim && state !== 'running' && state !== 'next' ? 'opacity-40' : ''}`}>{children}</div>
+  const active = state === 'running' || state === 'resting'
+  return <div ref={ref} className={`${className} ${active ? ROW_ACTIVE[state] : idleBg} ${dim && !state ? 'opacity-40' : ''}`}>{children}</div>
 }
 
-/** 実行中の行の中に出す残り時間（白文字・特大） */
-const RowTimerDisplay = ({ timer }: { timer: TimerControls }) => {
+/** 動いている行の中に出す残り時間（白文字・特大） */
+const RowTimerDisplay = ({ timer, state = 'running' }: { timer: TimerControls; state?: 'running' | 'resting' }) => {
   const t = timer.activeTimer
-  const label = t.paused ? '一時停止中' : t.type === 'tabata_rest' ? '休憩' : '実施中'
+  const label = t.paused ? '一時停止中' : state === 'resting' || t.type === 'tabata_rest' ? '休憩' : '実施中'
   const tabata = t.type === 'tabata_work' || t.type === 'tabata_rest'
   return (
     <div className="flex-1 min-w-0" role="timer" aria-label="残り時間">
-      <div className="text-[11px] font-black tracking-widest truncate text-orange-100">
+      <div className={`text-[11px] font-black tracking-widest truncate ${state === 'resting' ? 'text-blue-100' : 'text-orange-100'}`}>
         {label}{tabata && <span className="ml-1.5">RND {t.currentCycle}/{t.tabataCycles}</span>}
       </div>
       <div className="flex items-baseline gap-1">
         <span className="font-mono text-5xl font-black leading-none tabular-nums">{t.remaining}</span>
-        <span className="text-sm font-bold text-orange-100">秒</span>
+        <span className={`text-sm font-bold ${state === 'resting' ? 'text-blue-100' : 'text-orange-100'}`}>秒</span>
       </div>
     </div>
   )
@@ -158,7 +165,7 @@ const NextBadge = ({ timer }: { timer: TimerControls }) => (
 )
 
 /** 実行中の行のボタン。再生ボタンは一時停止／再開に変わり、止めるボタンも並ぶ（下のタイマー表示は出さないため） */
-const RowRunButton = ({ timer, name, tone = 'running' }: { timer: TimerControls; name: string; tone?: 'running' | 'next' }) => {
+const RowRunButton = ({ timer, name, tone = 'running' }: { timer: TimerControls; name: string; tone?: 'running' | 'resting' | 'next' }) => {
   const paused = timer.activeTimer.paused
   const next = tone === 'next' // 休憩中（次の種目の行）は、オレンジ地ではないので色を変える
   return (
@@ -166,14 +173,14 @@ const RowRunButton = ({ timer, name, tone = 'running' }: { timer: TimerControls;
       <button
         onClick={paused ? timer.resumeTimer : timer.pauseTimer}
         aria-label={`${name}のタイマーを${paused ? '再開' : '一時停止'}`}
-        className={`w-11 h-11 flex-shrink-0 flex justify-center items-center rounded-xl shadow-sm active:scale-95 transition-all ${next ? 'bg-blue-600 text-white' : 'bg-white text-orange-600'}`}
+        className={`w-11 h-11 flex-shrink-0 flex justify-center items-center rounded-xl shadow-sm active:scale-95 transition-all ${next ? 'bg-blue-600 text-white' : tone === 'resting' ? 'bg-white text-blue-600' : 'bg-white text-orange-600'}`}
       >
         {paused ? <Play size={20} fill="currentColor" className="ml-0.5" /> : <Pause size={20} fill="currentColor" />}
       </button>
       <button
         onClick={timer.stopTimer}
         aria-label={`${name}のタイマーを止める`}
-        className={`w-9 h-9 flex-shrink-0 flex justify-center items-center rounded-xl active:scale-95 transition-all ${next ? 'bg-gray-200 text-gray-600' : 'bg-orange-700/60 text-white'}`}
+        className={`w-9 h-9 flex-shrink-0 flex justify-center items-center rounded-xl active:scale-95 transition-all ${next ? 'bg-gray-200 text-gray-600' : tone === 'resting' ? 'bg-blue-800/60 text-white' : 'bg-orange-700/60 text-white'}`}
       >
         <X size={16} />
       </button>
@@ -249,20 +256,21 @@ const CircuitSessionCard = ({ items, start, timer, onSetUpdate, onToggle, onRoun
                 const exIdx = start + i
                 const hasWeight = ex.options.length > 1
                 const state = rowTimerState(timer.activeTimer, exIdx, r)
+                const active = state === 'running' || state === 'resting'
                 return (
                   <TimedRow key={ex.id} state={state} dim={circuitActive} idleBg={set.completed ? 'bg-green-50' : 'bg-gray-50'} className="flex items-center gap-2 p-2 rounded-xl transition-all">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 min-w-0">
-                        <div className={`font-bold truncate ${state === 'running' ? 'text-lg font-black text-white' : set.completed ? 'text-sm text-gray-400 line-through' : 'text-sm text-gray-800'}`}>{ex.name}</div>
+                        <div className={`font-bold truncate ${active ? 'text-lg font-black text-white' : set.completed ? 'text-sm text-gray-400 line-through' : 'text-sm text-gray-800'}`}>{ex.name}</div>
                         {state === 'next' && <NextBadge timer={timer} />}
                       </div>
-                      {state === 'running' ? <RowTimerDisplay timer={timer} /> : (
+                      {active ? <RowTimerDisplay timer={timer} state={state} /> : (
                       <div className="flex items-center gap-1 text-[10px] text-gray-500 font-bold">
                         <NumberField value={set.reps} min={1} max={999} aria-label={`${ex.name} ${r + 1}周目の運動秒数`} onChange={v => onSetUpdate(exIdx, r, 'reps', v)} className="w-9 bg-white border border-gray-200 rounded text-center outline-none p-0.5" />秒
                       </div>
                       )}
                     </div>
-                    {hasWeight && state !== 'running' && (
+                    {hasWeight && !active && (
                       <select
                         value={set.weight} aria-label={`${ex.name} ${r + 1}周目の負荷`}
                         onChange={e => onSetUpdate(exIdx, r, 'weight', Number(e.target.value))}
@@ -365,7 +373,7 @@ const ActiveSession = ({ session, setSession, timer, onSaveWorkout, onCancel }: 
         const lastGroupIdx = session.exercises.reduce((last, e, i) => (e.supersetGroup === ex.supersetGroup ? i : last), -1)
         shouldRest = exerciseIndex === lastGroupIdx
       }
-      if (shouldRest && ex.interval > 0) timer.startTimer('rest', ex.interval)
+      if (shouldRest && ex.interval > 0) timer.startTimer('rest', ex.interval, exerciseIndex, setIndex)
     }
   }
 
@@ -432,16 +440,17 @@ const ActiveSession = ({ session, setSession, timer, onSaveWorkout, onCancel }: 
               <div className="p-2 space-y-2">
                 {ex.sets.map((set, setIdx) => {
                   const state = rowTimerState(timer.activeTimer, exIdx, setIdx)
+                  const active = state === 'running' || state === 'resting'
                   const runName = `${ex.name} ${set.setNumber}セット目`
                   return (
                   <TimedRow key={setIdx} state={state} dim={false} idleBg={set.completed ? 'bg-green-50' : ''} className="flex items-center gap-2 p-2 rounded-xl transition-all">
-                    {state === 'running' && ex.type === 'tabata' ? (
+                    {active && ex.type === 'tabata' ? (
                       <>
                         <div className="w-8 font-black text-orange-100 text-[10px] flex-shrink-0 text-center tracking-widest leading-tight flex flex-col justify-center">
                           RND<br /><span className="text-sm">{set.setNumber}</span>
                         </div>
-                        <RowTimerDisplay timer={timer} />
-                        <RowRunButton timer={timer} name={runName} />
+                        <RowTimerDisplay timer={timer} state={state} />
+                        <RowRunButton timer={timer} name={runName} tone={state} />
                       </>
                     ) : ex.type === 'tabata' ? (
                       <>
@@ -473,15 +482,15 @@ const ActiveSession = ({ session, setSession, timer, onSaveWorkout, onCancel }: 
                       </>
                     ) : (
                       <>
-                        <div className={`w-6 text-center font-bold text-sm flex-shrink-0 ${state === 'running' ? 'text-orange-100' : 'text-gray-400'}`}>{set.setNumber}</div>
-                        {state === 'running' ? <RowTimerDisplay timer={timer} /> : (
+                        <div className={`w-6 text-center font-bold text-sm flex-shrink-0 ${state === 'resting' ? 'text-blue-100' : active ? 'text-orange-100' : 'text-gray-400'}`}>{set.setNumber}</div>
+                        {active ? <RowTimerDisplay timer={timer} state={state} /> : (
                         <div className="flex gap-2 flex-1 justify-end min-w-0 pr-1">
                           <EquipmentSelector label="負荷/機材" value={set.weight} options={ex.options} onChange={(v) => handleSetUpdate(exIdx, setIdx, 'weight', v)} />
                           <NumberInputStepper label={ex.type === 'duration' ? '秒数' : '回数'} value={set.reps} step={1} min={0} max={999} onChange={(v) => handleSetUpdate(exIdx, setIdx, 'reps', v)} />
                         </div>
                         )}
-                        {ex.type === 'duration' && state === 'running' && <RowRunButton timer={timer} name={runName} />}
-                        {ex.type === 'duration' && state !== 'running' && (
+                        {active && <RowRunButton timer={timer} name={runName} tone={state} />}
+                        {ex.type === 'duration' && !active && (
                           <button
                             onClick={() => timer.startTimer('work', set.reps, exIdx, setIdx, ex.interval)}
                             className={`w-10 h-10 flex-shrink-0 flex justify-center items-center rounded-xl transition-all shadow-sm mr-1 ${set.completed ? 'bg-gray-100 text-gray-400' : 'bg-orange-500 text-white hover:bg-orange-600 active:scale-95'}`}
