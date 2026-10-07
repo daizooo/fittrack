@@ -108,29 +108,41 @@ describe('サーキットのタイマーは次の種目へ自動で進む', () =
 describe('動いているタイマーが、どの種目か分かる', () => {
   const rowOf = (el: HTMLElement) => el.closest('div.rounded-xl') as HTMLElement
 
-  it('実行中の種目の行に枠と残り秒数が出て、休憩中は次の種目が示される', async () => {
+  it('実行中の種目だけがオレンジのベタ塗りで強調され、ほかの行は薄くなる', async () => {
     await startCircuitWorkout()
     expect(screen.queryByRole('timer')).not.toBeInTheDocument()
+    expect(rowOf(screen.getByLabelText('スクワット 1周目を完了')).className).not.toContain('opacity-40')
 
     fireEvent.click(screen.getByLabelText('プッシュアップ 1周目のタイマーを開始'))
     const running = rowOf(screen.getByRole('timer'))
     expect(running).toHaveTextContent('プッシュアップ')
-    expect(running.className).toContain('ring-orange-400')
     expect(running).toHaveTextContent('実施中')
+    expect(running.className).toContain('bg-orange-500')
+    expect(running.className).not.toContain('opacity-40')
     expect(screen.getByLabelText('プッシュアップ 1周目のタイマーを一時停止')).toBeInTheDocument()
-    // ほかの種目の行には枠が出ない
-    expect(rowOf(screen.getByLabelText('スクワット 1周目を完了')).className).not.toContain('ring-2')
+    // 同じサーキットのほかの種目は薄くなり、枠は付かない
+    const other = rowOf(screen.getByLabelText('スクワット 1周目を完了'))
+    expect(other.className).toContain('opacity-40')
+    expect(other.className).not.toContain('bg-orange-500')
+  })
+
+  it('休憩中は強調が消え、次の種目に NEXT が付き、運動が始まると強調がそちらへ移る', async () => {
+    await startCircuitWorkout()
+    fireEvent.click(screen.getByLabelText('プッシュアップ 1周目のタイマーを開始'))
 
     await advance(6_000 + 1_000) // 運動が終わり、休憩へ
-    const next = rowOf(screen.getByRole('timer'))
+    expect(screen.queryByRole('timer')).not.toBeInTheDocument() // いま運動中の種目は無い
+    const next = rowOf(screen.getByText(/^NEXT/))
     expect(next).toHaveTextContent('スクワット')
-    expect(next.className).toContain('ring-blue-300')
-    expect(next).toHaveTextContent('次 ・ 休憩')
+    expect(next).toHaveTextContent('休憩')
+    expect(next.className).not.toContain('opacity-40')
+    expect(next.className).not.toContain('bg-orange-500')
 
-    await advance(3_500) // 次の種目の運動が始まると、枠がそちらへ移る
+    await advance(3_500) // 次の種目の運動が始まる
+    expect(screen.queryByText(/^NEXT/)).not.toBeInTheDocument()
     const moved = rowOf(screen.getByRole('timer'))
     expect(moved).toHaveTextContent('スクワット')
-    expect(moved.className).toContain('ring-orange-400')
+    expect(moved.className).toContain('bg-orange-500')
   })
 
   it('行の一時停止ボタンで止めて、再開できる', async () => {
