@@ -7,6 +7,11 @@
     -webkit-tap-highlight-color: transparent;
   }
 
+  /* 端を引っ張ったときのバウンスで画面全体が動かないようにする */
+  html, body {
+    overscroll-behavior-y: none;
+  }
+
   body {
     @apply bg-gray-50 text-gray-900;
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
@@ -20,6 +25,13 @@
 }
 
 @layer utilities {
+  /* アプリ本体の高さ。dvh 非対応ブラウザは vh にフォールバック */
+  .app-shell {
+    height: 100vh;
+    height: 100dvh;
+    overflow: hidden;
+  }
+
   /* Hide scrollbar but keep functionality */
   .scrollbar-none {
     -ms-overflow-style: none;

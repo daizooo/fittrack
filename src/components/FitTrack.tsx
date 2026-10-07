@@ -6,6 +6,8 @@ import { getAudioCtx, playBeep } from '../lib/audio'
 import { daysOfWeek, localISODate } from '../lib/dates'
 import { defaultPlanSeeds } from '../lib/defaultPlans'
 import { planFromRow, planToRow, uuid, type WorkoutPlanRow } from '../lib/plans'
+import { UnsavedGuardContext, type UnsavedGuard } from '../lib/unsavedGuard'
+import { APP_SCROLL_ID, DiscardDialog } from './ui'
 import TabProfile from './TabProfile'
 import PlanTab from './PlanTab'
 import WorkoutTab, { type TimerControls } from './WorkoutTab'
@@ -34,7 +36,7 @@ const NAV_ITEMS: { tab: Tab; label: string; Icon: typeof Dumbbell }[] = [
 ]
 
 const BottomNav = ({ activeTab, setActiveTab }: { activeTab: Tab; setActiveTab: (tab: Tab) => void }) => (
-  <div className="fixed bottom-0 left-0 w-full bg-white/90 backdrop-blur-xl border-t border-gray-200 pb-safe z-40 shadow-[0_-10px_40px_rgba(0,0,0,0.05)]">
+  <div className="flex-shrink-0 w-full bg-white border-t border-gray-200 pb-safe z-40 shadow-[0_-10px_40px_rgba(0,0,0,0.05)]">
     <div className="flex justify-around items-center h-20 max-w-md mx-auto px-2">
       {NAV_ITEMS.map(({ tab, label, Icon }) => (
         <button key={tab} onClick={() => setActiveTab(tab)} className={`flex flex-col items-center justify-center w-1/4 h-full transition-all ${activeTab === tab ? 'text-blue-600 -translate-y-1' : 'text-gray-400'}`}>
@@ -64,6 +66,37 @@ export default function FitTrack({ userId }: { userId: string }) {
   const sessionRef = useRef(currentSession)
   useEffect(() => { sessionRef.current = currentSession }, [currentSession])
   const [showCancelConfirm, setShowCancelConfirm] = useState(false)
+
+  // ── 編集中のタブ移動ガード ───────────────────────────────────────────────────
+  const dirtyKeys = useRef(new Set<string>())
+  const [pendingTab, setPendingTab] = useState<Tab | null>(null)
+  const guard = useMemo<UnsavedGuard>(() => ({
+    setDirty: (key, dirty) => { if (dirty) dirtyKeys.current.add(key); else dirtyKeys.current.delete(key) }
+  }), [])
+  const requestTab = useCallback((tab: Tab) => {
+    if (tab === activeTab) return
+    if (dirtyKeys.current.size > 0) setPendingTab(tab)
+    else setActiveTab(tab)
+  }, [activeTab])
+  const discardAndGo = () => {
+    if (!pendingTab) return
+    dirtyKeys.current.clear()
+    setActiveTab(pendingTab)
+    setPendingTab(null)
+  }
+  // ブラウザのタブを閉じる／再読み込みするときも、編集中なら確認する
+  useEffect(() => {
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (dirtyKeys.current.size === 0) return
+      e.preventDefault()
+      e.returnValue = ''
+    }
+    window.addEventListener('beforeunload', onBeforeUnload)
+    return () => window.removeEventListener('beforeunload', onBeforeUnload)
+  }, [])
+
+  // タブを切り替えたらスクロール位置を先頭へ戻す（スクロールするのは <main> だけ）
+  useEffect(() => { document.getElementById(APP_SCROLL_ID)?.scrollTo?.(0, 0) }, [activeTab])
 
   const [activeTimer, setActiveTimer] = useState<TimerState>(defaultTimerState)
   const activeTimerRef = useRef(activeTimer)
@@ -394,8 +427,10 @@ export default function FitTrack({ userId }: { userId: string }) {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 font-sans text-gray-900 selection:bg-blue-200 relative">
-      <header className="bg-white border-b border-gray-100 sticky top-0 z-40">
+    <UnsavedGuardContext.Provider value={guard}>
+    {/* 画面全体は固定。ヘッダーと下部ナビは動かさず、<main> の中だけがスクロールする */}
+    <div className="app-shell flex flex-col bg-gray-50 font-sans text-gray-900 selection:bg-blue-200 relative">
+      <header className="flex-shrink-0 bg-white border-b border-gray-100 z-40">
         <div className="max-w-2xl mx-auto px-5 h-14 flex items-center justify-between">
           <h1 className="font-black text-lg tracking-wider text-gray-900 flex items-center gap-2">
             <span className="bg-blue-600 text-white w-6 h-6 flex items-center justify-center rounded-md text-xs">F</span>
@@ -418,7 +453,7 @@ export default function FitTrack({ userId }: { userId: string }) {
         </div>
       )}
 
-      <main>
+      <main id={APP_SCROLL_ID} className="flex-1 min-h-0 overflow-y-auto overscroll-y-contain">
         {activeTab === 'plan' && (
           <PlanTab userId={userId} plans={plans} setPlans={setPlans} equipment={equipment} records={records} />
         )}
@@ -433,7 +468,7 @@ export default function FitTrack({ userId }: { userId: string }) {
             onSaveWorkout={saveWorkoutSession}
             onRest={saveRestDay}
             onCancel={() => setShowCancelConfirm(true)}
-            onGoToPlans={() => setActiveTab('plan')}
+            onGoToPlans={() => requestTab('plan')}
           />
         )}
         {activeTab === 'history' && <RecordsTab records={records} />}
@@ -452,7 +487,7 @@ export default function FitTrack({ userId }: { userId: string }) {
         )}
       </main>
 
-      <BottomNav activeTab={activeTab} setActiveTab={setActiveTab} />
+      <BottomNav activeTab={activeTab} setActiveTab={requestTab} />
 
       {activeTimer.isActive && (
         <div
@@ -502,6 +537,9 @@ export default function FitTrack({ userId }: { userId: string }) {
           </div>
         </div>
       )}
+
+      {pendingTab && <DiscardDialog onKeep={() => setPendingTab(null)} onDiscard={discardAndGo} discardLabel="破棄して移動" />}
     </div>
+    </UnsavedGuardContext.Provider>
   )
 }

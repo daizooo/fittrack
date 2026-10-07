@@ -36,6 +36,7 @@ export interface Exercise {
   tabataRest?: number
   tabataCycles?: number
   supersetGroup?: string          // exercises sharing the same non-empty value are performed as a superset
+  circuit?: boolean               // true = サーキットの1ステーション（supersetGroup を共有する連続した種目が1つのサーキット）
 }
 
 /** ワークアウト前後のストレッチ1項目 */

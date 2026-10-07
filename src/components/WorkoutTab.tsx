@@ -154,8 +154,8 @@ const ActiveSession = ({ session, setSession, timer, onSaveWorkout, onCancel }: 
     if (isCompletedNow) {
       const ex = session.exercises[exerciseIndex]
       let shouldRest = true
-      if (ex.supersetGroup) {
-        // Only start rest after the last exercise in the superset group
+      if (ex.supersetGroup && !ex.circuit) {
+        // スーパーセットは、グループ最後の種目の後だけ休憩する（サーキットは各ステーションの後に休憩）
         const lastGroupIdx = session.exercises.reduce((last, e, i) => (e.supersetGroup === ex.supersetGroup ? i : last), -1)
         shouldRest = exerciseIndex === lastGroupIdx
       }
@@ -165,7 +165,7 @@ const ActiveSession = ({ session, setSession, timer, onSaveWorkout, onCancel }: 
 
   return (
     <div className="pb-36 max-w-2xl mx-auto p-3 relative">
-      <div className="mb-6 p-4 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-2xl shadow-lg flex justify-between items-center sticky top-16 z-30">
+      <div className="mb-6 p-4 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-2xl shadow-lg flex justify-between items-center sticky top-2 z-30">
         <div className="flex items-center gap-2 min-w-0">
           <button onClick={onCancel} aria-label="トレーニングを中止" className="p-1 hover:bg-white/20 rounded-lg transition-colors active:scale-95">
             <ChevronLeft size={24} />
@@ -184,21 +184,24 @@ const ActiveSession = ({ session, setSession, timer, onSaveWorkout, onCancel }: 
         const nextSessionEx = session.exercises[exIdx + 1]
         const isSessionInSuperset = !!ex.supersetGroup
         const isSessionLinkedToNext = isSessionInSuperset && nextSessionEx?.supersetGroup === ex.supersetGroup
+        const isCircuit = !!ex.circuit
         return (
           <React.Fragment key={exIdx}>
-            <div className={`bg-white rounded-2xl shadow-sm overflow-hidden ${isSessionInSuperset ? 'border-2 border-purple-200' : 'border border-gray-100'} ${isSessionLinkedToNext ? 'mb-0 rounded-b-lg' : 'mb-6'}`}>
+            <div className={`bg-white rounded-2xl shadow-sm overflow-hidden ${isCircuit ? 'border-2 border-emerald-200' : isSessionInSuperset ? 'border-2 border-purple-200' : 'border border-gray-100'} ${isSessionLinkedToNext ? 'mb-0 rounded-b-lg' : 'mb-6'}`}>
               <div className="p-3 bg-gray-50 border-b border-gray-100 flex justify-between items-center flex-wrap gap-2">
                 <h3 className="font-bold text-[15px] text-gray-800 flex items-center gap-2 leading-tight">
                   <span className="bg-blue-100 text-blue-600 w-6 h-6 flex justify-center items-center rounded-full text-xs flex-shrink-0">{exIdx + 1}</span>
                   {ex.name}
                   {ex.inherited && <span className="text-[9px] bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded font-black tracking-wider ml-1">前回引継</span>}
-                  {isSessionInSuperset && <span className="text-[9px] bg-purple-100 text-purple-600 px-1.5 py-0.5 rounded font-black tracking-wider ml-1">SS</span>}
+                  {isCircuit
+                    ? <span className="text-[9px] bg-emerald-100 text-emerald-600 px-1.5 py-0.5 rounded font-black tracking-wider ml-1">CIR</span>
+                    : isSessionInSuperset && <span className="text-[9px] bg-purple-100 text-purple-600 px-1.5 py-0.5 rounded font-black tracking-wider ml-1">SS</span>}
                 </h3>
                 <div className="flex items-center gap-2 flex-shrink-0 ml-auto">
                   <div className="flex items-center gap-1 bg-gray-100 border border-gray-200 rounded-md p-0.5 shadow-sm">
-                    <button onClick={() => handleSetCountChange(exIdx, -1)} aria-label="セットを減らす" className="p-0.5 text-gray-500 hover:bg-gray-200 rounded transition-colors"><Minus size={12} /></button>
-                    <span className="text-[10px] font-bold text-gray-600 px-1">{ex.targetSets} Sets</span>
-                    <button onClick={() => handleSetCountChange(exIdx, 1)} aria-label="セットを増やす" className="p-0.5 text-gray-500 hover:bg-gray-200 rounded transition-colors"><Plus size={12} /></button>
+                    <button onClick={() => handleSetCountChange(exIdx, -1)} aria-label={isCircuit ? '周回を減らす' : 'セットを減らす'} className="p-0.5 text-gray-500 hover:bg-gray-200 rounded transition-colors"><Minus size={12} /></button>
+                    <span className="text-[10px] font-bold text-gray-600 px-1">{isCircuit ? `${ex.targetSets} 周` : `${ex.targetSets} Sets`}</span>
+                    <button onClick={() => handleSetCountChange(exIdx, 1)} aria-label={isCircuit ? '周回を増やす' : 'セットを増やす'} className="p-0.5 text-gray-500 hover:bg-gray-200 rounded transition-colors"><Plus size={12} /></button>
                   </div>
                   <div className="flex items-center gap-1 text-[10px] text-gray-500 bg-white border border-gray-200 pl-1.5 pr-0.5 py-0.5 rounded-md shadow-sm">
                     <Timer size={10} />
@@ -270,9 +273,15 @@ const ActiveSession = ({ session, setSession, timer, onSaveWorkout, onCancel }: 
               </div>
             </div>
             {isSessionLinkedToNext && (
-              <div className="flex items-center justify-center h-8 bg-purple-50 border-x-2 border-purple-200 -mt-px">
-                <span className="text-[9px] font-bold text-purple-500">⚡ 続けて実施（スーパーセット）</span>
-              </div>
+              isCircuit ? (
+                <div className="flex items-center justify-center h-8 bg-emerald-50 border-x-2 border-emerald-200 -mt-px">
+                  <span className="text-[9px] font-bold text-emerald-600">🔁 続けて次の種目へ（サーキット）</span>
+                </div>
+              ) : (
+                <div className="flex items-center justify-center h-8 bg-purple-50 border-x-2 border-purple-200 -mt-px">
+                  <span className="text-[9px] font-bold text-purple-500">⚡ 続けて実施（スーパーセット）</span>
+                </div>
+              )
             )}
           </React.Fragment>
         )
@@ -358,19 +367,21 @@ export default function WorkoutTab(props: WorkoutTabProps) {
             )}
             {selected.exercises.map((ex, i) => {
               const next = selected.exercises[i + 1]
-              const inSS = !!ex.supersetGroup
-              const linked = inSS && next?.supersetGroup === ex.supersetGroup
+              const inSS = !!ex.supersetGroup && !ex.circuit
+              const inCircuit = !!ex.circuit
+              const linked = !!ex.supersetGroup && next?.supersetGroup === ex.supersetGroup
               return (
                 <React.Fragment key={ex.id}>
-                  <div className={`text-sm text-gray-700 flex items-center justify-between py-0.5 ${inSS ? 'border-l-2 border-purple-400 pl-2 -ml-2' : ''}`}>
+                  <div className={`text-sm text-gray-700 flex items-center justify-between py-0.5 ${inCircuit ? 'border-l-2 border-emerald-400 pl-2 -ml-2' : inSS ? 'border-l-2 border-purple-400 pl-2 -ml-2' : ''}`}>
                     <div className="flex items-center gap-2">
-                      <span className={`w-1.5 h-1.5 rounded-full ${inSS ? 'bg-purple-400' : 'bg-blue-500'}`}></span>
+                      <span className={`w-1.5 h-1.5 rounded-full ${inCircuit ? 'bg-emerald-400' : inSS ? 'bg-purple-400' : 'bg-blue-500'}`}></span>
                       {ex.name}
                       {inSS && <span className="text-[8px] bg-purple-100 text-purple-600 px-1 rounded font-black">SS</span>}
+                      {inCircuit && <span className="text-[8px] bg-emerald-100 text-emerald-600 px-1 rounded font-black">CIR</span>}
                     </div>
-                    <span className="text-gray-400 text-xs">{ex.targetSets}セット</span>
+                    <span className="text-gray-400 text-xs">{inCircuit ? `${ex.targetSets}周` : `${ex.targetSets}セット`}</span>
                   </div>
-                  {linked && <div className="text-[9px] text-purple-400 font-bold pl-3 -my-0.5">↕ 続けて実施</div>}
+                  {linked && <div className={`text-[9px] font-bold pl-3 -my-0.5 ${inCircuit ? 'text-emerald-500' : 'text-purple-400'}`}>↕ 続けて実施</div>}
                 </React.Fragment>
               )
             })}

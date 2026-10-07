@@ -55,6 +55,36 @@ export const createEmptyPlan = (sortOrder: number): WorkoutPlan => ({
   sortOrder
 })
 
+// ─── Circuit ─────────────────────────────────────────────────────────────────
+
+export const CIRCUIT_DEFAULTS = { work: 40, rest: 20, rounds: 3 } as const
+
+/** サーキットの1ステーション。運動秒数・休憩・周回数は同じサーキット内で共通 */
+export const createCircuitStation = (group: string, over: Partial<Exercise> = {}): Exercise => ({
+  id: newId('ex'), name: '', type: 'duration', targetSets: CIRCUIT_DEFAULTS.rounds,
+  defaultReps: CIRCUIT_DEFAULTS.work, defaultWeight: 0, interval: CIRCUIT_DEFAULTS.rest,
+  equipmentType: 'bodyweight', supersetGroup: group, circuit: true, ...over
+})
+
+export type ExerciseSegment =
+  | { kind: 'single'; start: number; items: [Exercise] }
+  | { kind: 'circuit'; group: string; start: number; items: Exercise[] }
+
+/** 種目リストを「単独の種目」と「サーキット（連続するステーションの塊）」に分ける */
+export const segmentExercises = (exercises: Exercise[]): ExerciseSegment[] => {
+  const segs: ExerciseSegment[] = []
+  exercises.forEach((ex, i) => {
+    const last = segs[segs.length - 1]
+    if (ex.circuit && ex.supersetGroup) {
+      if (last?.kind === 'circuit' && last.group === ex.supersetGroup) last.items.push(ex)
+      else segs.push({ kind: 'circuit', group: ex.supersetGroup, start: i, items: [ex] })
+    } else {
+      segs.push({ kind: 'single', start: i, items: [ex] })
+    }
+  })
+  return segs
+}
+
 // ─── Plan summary ────────────────────────────────────────────────────────────
 
 /** プランの所要時間の目安（分）。セット・インターバル・ストレッチから概算する */

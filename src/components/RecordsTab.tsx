@@ -198,7 +198,7 @@ export default function RecordsTab({ records }: { records: WorkoutRecord[] }) {
   const today = new Date()
 
   return (
-    <div className="pb-28 max-w-2xl mx-auto bg-gray-50 min-h-screen">
+    <div className="pb-28 max-w-2xl mx-auto bg-gray-50">
       <PeriodFilter mode={mode} setMode={setMode} anchor={anchor} shift={shift} />
 
       <div className="p-5 space-y-5">

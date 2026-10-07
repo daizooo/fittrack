@@ -6,6 +6,7 @@ import {
 import { supabase } from '../lib/supabase'
 import { generateEquipmentOptions } from '../lib/equipmentUtils'
 import { calcAge, localISODate } from '../lib/dates'
+import { useUnsavedGuard } from '../lib/unsavedGuard'
 import type {
   EquipmentItem, EquipmentWeightConfig, Profile, BodyLog, WorkoutPlan, WorkoutRecord
 } from '../types'
@@ -105,6 +106,21 @@ export default function TabProfile({
   const [deleteConfirm, setDeleteConfirm] = useState<{
     id: string; name: string; affected: string[]
   } | null>(null)
+
+  // ── 未保存の入力があるままタブを移動しようとしたら FitTrack 側で確認する ───────────
+  const physicalDirty = physicalEditing && (
+    birthDate !== (profile?.birth_date ?? '') ||
+    gender !== (profile?.gender ?? '') ||
+    height !== (profile?.height?.toString() ?? '')
+  )
+  const loadFormDirty = loadFormOpen && (
+    !!newLoadName.trim() || !!newFixedWeightInput || newFixedWeights.length > 0 ||
+    !!newVarMin || !!newVarMax || !!newVarStep
+  )
+  useUnsavedGuard('profile-physical', physicalDirty)
+  useUnsavedGuard('profile-body-log', !!logWeight || !!logBodyFat)
+  useUnsavedGuard('profile-load-equipment', loadFormDirty)
+  useUnsavedGuard('profile-data-equipment', !!newDataName.trim())
 
   // ── Export ────────────────────────────────────────────────────────────────────
   const [exportPeriod, setExportPeriod] = useState<3 | 6>(3)
@@ -335,7 +351,7 @@ export default function TabProfile({
   // ── Render ───────────────────────────────────────────────────────────────────
 
   return (
-    <div className="pb-28 max-w-2xl mx-auto p-4 bg-gray-50 min-h-screen space-y-4">
+    <div className="pb-28 max-w-2xl mx-auto p-4 bg-gray-50 space-y-4">
 
       {/* ── 身体情報 ──────────────────────────────────────────────────────────── */}
       <Section title="身体情報" icon={<User size={18} className="text-blue-500" />}>
