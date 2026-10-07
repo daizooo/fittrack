@@ -107,9 +107,22 @@ export const buildNameIndex = (library: ExerciseDef[]): Map<string, string> => {
   return index
 }
 
-export const isNameTaken = (library: ExerciseDef[], name: string, exceptId?: string) => {
+/** 同じ名前（別名を含む）を持つ既存の種目を返す */
+export const findNameConflict = (library: ExerciseDef[], name: string, exceptId?: string) => {
   const key = normName(name)
-  return library.some(d => d.id !== exceptId && [d.name, ...(d.aliases ?? [])].some(n => normName(n) === key))
+  return library.find(d => d.id !== exceptId && [d.name, ...(d.aliases ?? [])].some(n => normName(n) === key))
+}
+
+export const isNameTaken = (library: ExerciseDef[], name: string, exceptId?: string) =>
+  !!findNameConflict(library, name, exceptId)
+
+/** 重複エラーの文言。別名で重複した場合は、既存の種目名も示す */
+export const nameConflictMessage = (library: ExerciseDef[], name: string, exceptId?: string) => {
+  const hit = findNameConflict(library, name, exceptId)
+  if (!hit) return null
+  return normName(hit.name) === normName(name)
+    ? '同じ名前の種目が既にあります'
+    : `「${name}」は既存の種目「${hit.name}」の別名です。その種目をそのまま使えます`
 }
 
 export interface ExerciseRow {
