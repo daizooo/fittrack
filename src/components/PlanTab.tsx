@@ -1,13 +1,20 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import {
   Plus, Trash2, Save, Edit3, Copy, Timer, Flame, Link2, Unlink2, ChevronLeft,
-  ChevronUp, ChevronDown, Clock, ListChecks, Sunrise, Sunset, AlertTriangle
+  ChevronUp, ChevronDown, Clock, ListChecks, Sunrise, Sunset, AlertTriangle, Repeat
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
-import { createEmptyPlan, estimatePlanMinutes, lastPerformedMap, newId, planToRow, uuid } from '../lib/plans'
+import {
+  createCircuit, createEmptyPlan, createStation, estimatePlanMinutes, lastPerformedMap,
+  newId, planToRow, uuid
+} from '../lib/plans'
+import { generateEquipmentOptions } from '../lib/equipmentUtils'
+import { useUnsavedGuard } from '../lib/unsavedGuard'
 import { daysAgo, formatDaysAgo } from '../lib/dates'
-import { NumberField } from './ui'
-import type { EquipmentItem, Exercise, Stretch, StretchPhase, WorkoutPlan, WorkoutRecord } from '../types'
+import { DiscardDialog, NumberField, Stepper, scrollAppToTop } from './ui'
+import { ExercisePicker, type ExerciseActions, type ExerciseUsage } from './ExercisePicker'
+import { exerciseFromDef } from '../lib/exerciseLibrary'
+import type { CircuitStation, EquipmentItem, Exercise, ExerciseDef, Stretch, StretchPhase, WorkoutPlan, WorkoutRecord } from '../types'
 
 // ─── Stretch presets ─────────────────────────────────────────────────────────
 
@@ -131,12 +138,67 @@ const StretchListEditor = ({ phase, items, onChange }: {
   )
 }
 
+// ─── Equipment + weight selector ─────────────────────────────────────────────
+
+const selectCls = 'w-full h-10 bg-gray-50 border border-gray-200 rounded-lg px-2 text-sm font-bold outline-none disabled:text-gray-400'
+
+/** 使用する機材と、その機材の負荷（チューブの色・本数など）を選ぶ */
+const EquipmentFields = ({ ex, equipment, onChange }: {
+  ex: Pick<Exercise, 'equipmentType' | 'defaultWeight'>
+  equipment: EquipmentItem[]
+  onChange: (patch: Partial<Pick<Exercise, 'equipmentType' | 'defaultWeight'>>) => void
+}) => {
+  const loadItems = equipment.filter(e => e.category === 'load')
+  const item = loadItems.find(e => e.id === ex.equipmentType)
+  const options = item ? generateEquipmentOptions(item) : [{ label: 'ー', weight: 0 }]
+  const known = options.some(o => o.weight === ex.defaultWeight)
+  return (
+    <div className="grid grid-cols-2 gap-3">
+      <div>
+        <label className="text-[10px] font-bold text-gray-500 block mb-1">使用する機材</label>
+        <select
+          value={item ? ex.equipmentType : ''}
+          aria-label="使用する機材"
+          // 機材が変わると負荷の選択肢も変わるため、負荷は「ー」に戻す
+          onChange={e => onChange({ equipmentType: e.target.value, defaultWeight: 0 })}
+          className={selectCls}
+        >
+          {!item && <option value="" disabled>（未選択）</option>}
+          {loadItems.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
+        </select>
+      </div>
+      <div>
+        <label className="text-[10px] font-bold text-gray-500 block mb-1">負荷（初期値）</label>
+        <select
+          value={ex.defaultWeight}
+          aria-label="負荷（初期値）"
+          disabled={options.length <= 1 && known}
+          onChange={e => onChange({ defaultWeight: Number(e.target.value) })}
+          className={selectCls}
+        >
+          {!known && <option value={ex.defaultWeight}>{ex.defaultWeight}kg</option>}
+          {options.map((o, i) => <option key={i} value={o.weight}>{o.label}</option>)}
+        </select>
+      </div>
+    </div>
+  )
+}
+
 // ─── Plan editor ─────────────────────────────────────────────────────────────
 
-const PlanEditor = ({ initial, isNew, equipment, existingNames, onCancel, onSave }: {
+type PickerTarget =
+  | { kind: 'add' }
+  | { kind: 'circuit-add'; circuitId: string }
+  | { kind: 'replace'; exId: string }
+  | { kind: 'replace-station'; circuitId: string; stId: string }
+
+const PlanEditor = ({ initial, isNew, equipment, library, usage, exerciseActions, existingNames, onCancel, onSave }: {
   initial: WorkoutPlan
   isNew: boolean
   equipment: EquipmentItem[]
+  library: ExerciseDef[]
+  usage: ExerciseUsage
+  exerciseActions: ExerciseActions
   existingNames: string[]
   onCancel: () => void
   onSave: (plan: WorkoutPlan) => Promise<string | null>
@@ -144,17 +206,68 @@ const PlanEditor = ({ initial, isNew, equipment, existingNames, onCancel, onSave
   const [draft, setDraft] = useState<WorkoutPlan>(() => JSON.parse(JSON.stringify(initial)))
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [confirmCancel, setConfirmCancel] = useState(false)
+  const [picker, setPicker] = useState<PickerTarget | null>(null)
+  const initialJson = useRef(JSON.stringify(initial))
+  const dirty = useMemo(() => JSON.stringify(draft) !== initialJson.current, [draft])
+  // 変更があるままタブを移動しようとしたら FitTrack 側で確認ダイアログを出す
+  useUnsavedGuard('plan-editor', dirty)
+  const requestCancel = () => (dirty ? setConfirmCancel(true) : onCancel())
 
+  const patchExercise = (exId: string, patch: Partial<Exercise>) =>
+    setDraft(prev => ({ ...prev, exercises: prev.exercises.map(ex => (ex.id === exId ? { ...ex, ...patch } : ex)) }))
   const updateExercise = (exId: string, field: keyof Exercise, value: string | number) =>
-    setDraft(prev => ({ ...prev, exercises: prev.exercises.map(ex => (ex.id === exId ? { ...ex, [field]: value } : ex)) }))
+    patchExercise(exId, { [field]: value } as Partial<Exercise>)
 
-  const addExercise = () => setDraft(prev => ({
+  const loadEquipmentIds = equipment.filter(e => e.category === 'load').map(e => e.id)
+
+  // 種目は一覧（種目ピッカー）から選んで追加する。自由入力はしない
+  const addExercises = (defs: ExerciseDef[]) => setDraft(prev => ({
     ...prev,
-    exercises: [...prev.exercises, {
-      id: newId('ex'), name: '', type: 'normal', targetSets: 3,
-      defaultReps: 10, defaultWeight: 0, interval: 60, equipmentType: 'bodyweight'
-    }]
+    exercises: [...prev.exercises, ...defs.map(d => exerciseFromDef(d, loadEquipmentIds, newId))]
   }))
+  const replaceExercise = (exId: string, def: ExerciseDef) => {
+    const fresh = exerciseFromDef(def, loadEquipmentIds, newId)
+    setDraft(prev => ({
+      ...prev,
+      exercises: prev.exercises.map(e => {
+        if (e.id !== exId) return e
+        // セット数・休憩は残し、種目に依存する項目（タイプ・機材・回数/秒数）は新しい種目の初期値にする
+        const { type, equipmentType, defaultReps, tabataWork, tabataRest, tabataCycles } = fresh
+        return { ...e, exerciseId: def.id, name: def.name, type, equipmentType, defaultWeight: 0, defaultReps, tabataWork, tabataRest, tabataCycles }
+      })
+    }))
+  }
+  const stationFromDef = (def: ExerciseDef): CircuitStation => createStation({
+    exerciseId: def.id, name: def.name,
+    equipmentType: loadEquipmentIds.includes(def.equipmentType) ? def.equipmentType : 'bodyweight'
+  })
+  const handlePick = (defs: ExerciseDef[]) => {
+    const target = picker
+    setPicker(null)
+    if (!target || defs.length === 0) return
+    if (target.kind === 'add') addExercises(defs)
+    else if (target.kind === 'circuit-add') patchStations(target.circuitId, list => [...list, ...defs.map(stationFromDef)])
+    else if (target.kind === 'replace') replaceExercise(target.exId, defs[0])
+    else patchStation(target.circuitId, target.stId, stationFromDef(defs[0]))
+  }
+
+  const moveExercise = (idx: number, dir: -1 | 1) => setDraft(prev => ({ ...prev, exercises: moveItem(prev.exercises, idx, dir) }))
+  const removeExercise = (exId: string) => setDraft(prev => ({ ...prev, exercises: prev.exercises.filter(e => e.id !== exId) }))
+
+  // サーキット: 運動秒数(defaultReps)・休憩(interval)・周回数(targetSets)はサーキットが1つだけ持つ
+  const addCircuit = () => {
+    const c = createCircuit()
+    setDraft(prev => ({ ...prev, exercises: [...prev.exercises, c] }))
+    setPicker({ kind: 'circuit-add', circuitId: c.id })
+  }
+  const patchStations = (circuitId: string, fn: (list: CircuitStation[]) => CircuitStation[]) =>
+    setDraft(prev => ({
+      ...prev,
+      exercises: prev.exercises.map(e => (e.id === circuitId ? { ...e, stations: fn(e.stations ?? []) } : e))
+    }))
+  const patchStation = (circuitId: string, stId: string, patch: Partial<CircuitStation>) =>
+    patchStations(circuitId, list => list.map(st => (st.id === stId ? { ...st, ...patch } : st)))
 
   const linkSuperset = (exId1: string, exId2: string) => setDraft(prev => {
     const ex1 = prev.exercises.find(e => e.id === exId1)
@@ -192,11 +305,17 @@ const PlanEditor = ({ initial, isNew, equipment, existingNames, onCancel, onSave
     const name = draft.name.trim()
     if (!name) { setError('プラン名を入力してください'); return }
     if (existingNames.includes(name)) { setError('同じ名前のプランが既にあります'); return }
-    if (draft.exercises.some(ex => !ex.name.trim())) { setError('種目名が空の種目があります'); return }
+    // 種目は一覧から選ぶ。ID の無い旧データ（種目テーブルの移行前など）は名前があれば保存できる
+    if (draft.exercises.some(ex => ex.type !== 'circuit' && !ex.exerciseId && !ex.name.trim())) { setError('種目が選ばれていない行があります'); return }
+    if (draft.exercises.some(ex => ex.type === 'circuit' && !(ex.stations ?? []).length)) { setError('サーキットに種目がありません'); return }
+
     const cleaned: WorkoutPlan = {
       ...draft,
       name,
-      exercises: draft.exercises.map(ex => ({ ...ex, name: ex.name.trim() })),
+      exercises: draft.exercises.map(ex => ({
+        ...ex,
+        name: ex.name.trim()
+      })),
       warmup: draft.warmup.filter(s => s.name.trim()).map(s => ({ ...s, name: s.name.trim() })),
       cooldown: draft.cooldown.filter(s => s.name.trim()).map(s => ({ ...s, name: s.name.trim() }))
     }
@@ -207,14 +326,14 @@ const PlanEditor = ({ initial, isNew, equipment, existingNames, onCancel, onSave
     if (err) setError(err)
   }
 
-  const numCls = 'w-full bg-gray-50 border border-gray-200 rounded-lg p-2 text-sm font-bold outline-none text-center'
+  const numCls = 'w-full h-10 bg-gray-50 border border-gray-200 rounded-lg px-2 text-sm font-bold outline-none text-center'
 
   return (
-    <div className="pb-28 max-w-2xl mx-auto p-5 bg-gray-50 min-h-screen">
-      <div className="flex justify-between items-center mb-6 sticky top-14 z-30 bg-gray-50/95 backdrop-blur -mx-5 px-5 py-3">
+    <div className="pb-28 max-w-2xl mx-auto p-5 bg-gray-50">
+      <div className="flex justify-between items-center mb-6 sticky top-0 z-30 bg-gray-50/95 backdrop-blur -mx-5 px-5 py-3">
         <h2 className="text-xl font-black text-gray-800">{isNew ? '新しいプラン' : 'プランの編集'}</h2>
         <div className="flex gap-2">
-          <button onClick={onCancel} className="px-3 py-1.5 bg-gray-200 text-gray-700 text-sm font-bold rounded-lg active:scale-95">キャンセル</button>
+          <button onClick={requestCancel} className="px-3 py-1.5 bg-gray-200 text-gray-700 text-sm font-bold rounded-lg active:scale-95">キャンセル</button>
           <button onClick={handleSave} disabled={saving} className="px-3 py-1.5 bg-blue-600 text-white text-sm font-bold rounded-lg flex items-center gap-1 shadow-md active:scale-95 disabled:opacity-60">
             <Save size={16} />{saving ? '保存中...' : '保存'}
           </button>
@@ -243,8 +362,76 @@ const PlanEditor = ({ initial, isNew, equipment, existingNames, onCancel, onSave
       <h3 className="font-black text-gray-800 text-sm flex items-center gap-1.5 mb-3 px-1"><ListChecks size={16} className="text-blue-500" />種目</h3>
       <div className="space-y-0 mb-6">
         {draft.exercises.map((ex, idx) => {
+          const moveBtns = (
+            <>
+              <button onClick={() => moveExercise(idx, -1)} disabled={idx === 0} aria-label="上へ" className="p-1 text-gray-400 disabled:opacity-30"><ChevronUp size={18} /></button>
+              <button onClick={() => moveExercise(idx, 1)} disabled={idx === draft.exercises.length - 1} aria-label="下へ" className="p-1 text-gray-400 disabled:opacity-30"><ChevronDown size={18} /></button>
+            </>
+          )
+
+          // ── サーキット ──
+          if (ex.type === 'circuit') {
+            const stations = ex.stations ?? []
+            const totalMin = Math.max(1, Math.round(stations.length * ex.targetSets * (ex.defaultReps + ex.interval) / 60))
+            return (
+              <div key={ex.id} className="bg-white p-4 rounded-2xl shadow-sm border-2 border-emerald-300 mb-4">
+                <div className="flex items-center gap-1 mb-3">
+                  <Repeat size={16} className="text-emerald-500 mr-1" />
+                  <span className="flex-1 font-black text-gray-800 text-sm">サーキット</span>
+                  {moveBtns}
+                  <button onClick={() => removeExercise(ex.id)} aria-label="サーキットを削除" className="p-1 text-gray-400 hover:text-red-500 transition-colors"><Trash2 size={18} /></button>
+                </div>
+
+                <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-100 mb-3">
+                  <p className="text-[10px] font-bold text-emerald-700 mb-2">全種目で共通の設定</p>
+                  <div className="grid grid-cols-2 gap-3 mb-3">
+                    <div>
+                      <label className="text-[10px] font-bold text-orange-600 block mb-1">運動 (秒)</label>
+                      <NumberField value={ex.defaultReps} min={1} max={999} aria-label="サーキットの運動秒数" onChange={v => updateExercise(ex.id, 'defaultReps', v)} className="w-full h-10 bg-white border border-orange-200 rounded-lg px-2 text-sm font-bold outline-none text-center text-orange-600" />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-blue-600 block mb-1">休憩 (秒)</label>
+                      <NumberField value={ex.interval} min={0} max={600} aria-label="サーキットの休憩秒数" onChange={v => updateExercise(ex.id, 'interval', v)} className="w-full h-10 bg-white border border-blue-200 rounded-lg px-2 text-sm font-bold outline-none text-center text-blue-600" />
+                    </div>
+                  </div>
+                  <label className="text-[10px] font-bold text-gray-600 block mb-1">周回数</label>
+                  <Stepper value={ex.targetSets} min={1} max={20} label="周回数" onChange={v => updateExercise(ex.id, 'targetSets', v)} />
+                  <p className="text-[10px] text-emerald-700/80 mt-2">{stations.length}種目 × {ex.targetSets}周 ＝ 約{totalMin}分</p>
+                </div>
+
+                <div className="space-y-2 mb-3">
+                  {stations.map((st, i) => (
+                    <div key={st.id} className="bg-gray-50 rounded-xl p-2.5 border border-gray-100">
+                      <div className="flex items-center gap-1.5 mb-2">
+                        <span className="text-emerald-500 opacity-70 font-bold text-sm w-5">{i + 1}.</span>
+                        <button
+                          onClick={() => setPicker({ kind: 'replace-station', circuitId: ex.id, stId: st.id })}
+                          aria-label={`種目を変更: ${st.name}`}
+                          className="flex-1 min-w-0 text-left font-bold text-gray-800 border-b border-gray-200 pb-0.5 truncate hover:border-blue-500"
+                        >
+                          {st.name}
+                        </button>
+                        <button onClick={() => patchStations(ex.id, list => moveItem(list, i, -1))} disabled={i === 0} aria-label="種目を上へ" className="p-1 text-gray-400 disabled:opacity-30"><ChevronUp size={16} /></button>
+                        <button onClick={() => patchStations(ex.id, list => moveItem(list, i, 1))} disabled={i === stations.length - 1} aria-label="種目を下へ" className="p-1 text-gray-400 disabled:opacity-30"><ChevronDown size={16} /></button>
+                        <button onClick={() => patchStations(ex.id, list => list.filter(x => x.id !== st.id))} aria-label="種目を削除" className="p-1 text-gray-400 hover:text-red-500"><Trash2 size={15} /></button>
+                      </div>
+                      <EquipmentFields ex={st} equipment={equipment} onChange={patch => patchStation(ex.id, st.id, patch)} />
+                    </div>
+                  ))}
+                </div>
+
+                {stations.length === 0 && <p className="text-xs text-gray-400 text-center mb-2">種目を追加してください</p>}
+                <button onClick={() => setPicker({ kind: 'circuit-add', circuitId: ex.id })} className="w-full py-2.5 border-2 border-dashed border-emerald-200 rounded-xl text-emerald-600 text-xs font-bold flex items-center justify-center gap-1 active:scale-95">
+                  <Plus size={14} /> このサーキットに種目を追加
+                </button>
+              </div>
+            )
+          }
+
+          // ── 単独の種目 ──
           const nextEx = draft.exercises[idx + 1]
-          const isLinkedToNext = !!ex.supersetGroup && ex.supersetGroup === nextEx?.supersetGroup
+          const linkable = nextEx && nextEx.type !== 'circuit' ? nextEx : undefined
+          const isLinkedToNext = !!ex.supersetGroup && ex.supersetGroup === linkable?.supersetGroup
           const isInSuperset = !!ex.supersetGroup
           return (
             <React.Fragment key={ex.id}>
@@ -252,82 +439,81 @@ const PlanEditor = ({ initial, isNew, equipment, existingNames, onCancel, onSave
                 <div className="flex items-center gap-1 mb-4">
                   <span className="text-blue-500 opacity-50 font-bold text-sm w-5">{idx + 1}.</span>
                   {isInSuperset && <span className="text-[9px] bg-purple-100 text-purple-600 px-1.5 py-0.5 rounded font-black tracking-wider">SS</span>}
-                  <input
-                    type="text" value={ex.name}
-                    aria-label="種目名"
-                    onChange={e => updateExercise(ex.id, 'name', e.target.value)}
-                    className="flex-1 min-w-0 font-bold text-gray-800 text-lg border-b border-gray-200 pb-1 outline-none focus:border-blue-500"
-                    placeholder="種目名"
-                  />
-                  <button onClick={() => setDraft(prev => ({ ...prev, exercises: moveItem(prev.exercises, idx, -1) }))} disabled={idx === 0} aria-label="上へ" className="p-1 text-gray-400 disabled:opacity-30"><ChevronUp size={18} /></button>
-                  <button onClick={() => setDraft(prev => ({ ...prev, exercises: moveItem(prev.exercises, idx, 1) }))} disabled={idx === draft.exercises.length - 1} aria-label="下へ" className="p-1 text-gray-400 disabled:opacity-30"><ChevronDown size={18} /></button>
-                  <button onClick={() => setDraft(prev => ({ ...prev, exercises: prev.exercises.filter(e => e.id !== ex.id) }))} aria-label="種目を削除" className="p-1 text-gray-400 hover:text-red-500 transition-colors"><Trash2 size={18} /></button>
+                  <button
+                    onClick={() => setPicker({ kind: 'replace', exId: ex.id })}
+                    aria-label={`種目を変更: ${ex.name}`}
+                    className="flex-1 min-w-0 text-left font-bold text-gray-800 text-lg border-b border-gray-200 pb-1 truncate hover:border-blue-500"
+                  >
+                    {ex.name}
+                  </button>
+                  {moveBtns}
+                  <button onClick={() => removeExercise(ex.id)} aria-label="種目を削除" className="p-1 text-gray-400 hover:text-red-500 transition-colors"><Trash2 size={18} /></button>
                 </div>
 
-                <div className="grid grid-cols-2 gap-3 mb-3">
-                  <div>
-                    <label className="text-[10px] font-bold text-gray-500 block mb-1">種目タイプ</label>
-                    <select value={ex.type} onChange={e => updateExercise(ex.id, 'type', e.target.value)} className="w-full bg-gray-50 border border-gray-200 rounded-lg p-2 text-sm font-bold outline-none">
-                      <option value="normal">通常（回数）</option>
-                      <option value="duration">秒数（デュレーション）</option>
-                      <option value="tabata">ラウンド（HIIT等）</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="text-[10px] font-bold text-gray-500 block mb-1">使用する機材 (初期負荷)</label>
-                    <select value={ex.equipmentType} onChange={e => updateExercise(ex.id, 'equipmentType', e.target.value)} className="w-full bg-gray-50 border border-gray-200 rounded-lg p-2 text-sm font-bold outline-none">
-                      {equipment.filter(e => e.category === 'load').map(item => (
-                        <option key={item.id} value={item.id}>{item.name}</option>
-                      ))}
-                    </select>
-                  </div>
+                <div className="mb-3">
+                  <label className="text-[10px] font-bold text-gray-500 block mb-1">種目タイプ</label>
+                  <select value={ex.type} onChange={e => updateExercise(ex.id, 'type', e.target.value)} className={selectCls}>
+                    <option value="normal">通常（回数）</option>
+                    <option value="duration">秒数（デュレーション）</option>
+                    <option value="tabata">ラウンド（HIIT等）</option>
+                  </select>
                 </div>
 
-                <div className="grid grid-cols-3 gap-3 mb-3">
+                <div className="mb-3">
+                  <EquipmentFields ex={ex} equipment={equipment} onChange={patch => patchExercise(ex.id, patch)} />
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-3">
                   <div>
                     <label className="text-[10px] font-bold text-gray-500 block mb-1">セット数</label>
-                    <NumberField value={ex.targetSets} min={1} max={20} onChange={v => updateExercise(ex.id, 'targetSets', v)} className={numCls} />
+                    <Stepper value={ex.targetSets} min={1} max={20} label="セット数" onChange={v => updateExercise(ex.id, 'targetSets', v)} />
                   </div>
-                  {ex.type !== 'tabata' && (
+                  {ex.type === 'normal' && (
                     <div>
-                      <label className="text-[10px] font-bold text-gray-500 block mb-1">{ex.type === 'duration' ? '秒数' : '回数'}</label>
-                      <NumberField value={ex.defaultReps} min={0} max={999} onChange={v => updateExercise(ex.id, 'defaultReps', v)} className={numCls} />
+                      <label className="text-[10px] font-bold text-gray-500 block mb-1">回数</label>
+                      <Stepper value={ex.defaultReps} min={0} max={999} label="回数" onChange={v => updateExercise(ex.id, 'defaultReps', v)} />
+                    </div>
+                  )}
+                  {ex.type === 'duration' && (
+                    <div>
+                      <label className="text-[10px] font-bold text-gray-500 block mb-1">秒数</label>
+                      <NumberField value={ex.defaultReps} min={0} max={999} aria-label="秒数" onChange={v => updateExercise(ex.id, 'defaultReps', v)} className={numCls} />
                     </div>
                   )}
                   <div>
                     <label className="text-[10px] font-bold text-gray-500 block mb-1 flex items-center gap-1"><Timer size={10} />休憩 (秒)</label>
-                    <NumberField value={ex.interval} min={0} max={600} onChange={v => updateExercise(ex.id, 'interval', v)} className={numCls} />
+                    <NumberField value={ex.interval} min={0} max={600} aria-label="休憩秒数" onChange={v => updateExercise(ex.id, 'interval', v)} className={numCls} />
                   </div>
                 </div>
 
                 {ex.type === 'tabata' && (
-                  <div className="grid grid-cols-3 gap-3 p-3 bg-orange-50 rounded-xl border border-orange-100">
+                  <div className="grid grid-cols-2 gap-3 p-3 bg-orange-50 rounded-xl border border-orange-100">
                     <div>
                       <label className="text-[10px] font-bold text-orange-600 block mb-1">稼働 (秒)</label>
-                      <NumberField value={ex.tabataWork ?? 20} min={1} max={600} onChange={v => updateExercise(ex.id, 'tabataWork', v)} className="w-full bg-white border border-orange-200 rounded-lg p-2 text-sm font-bold outline-none text-center text-orange-600" />
+                      <NumberField value={ex.tabataWork ?? 20} min={1} max={600} aria-label="稼働秒数" onChange={v => updateExercise(ex.id, 'tabataWork', v)} className="w-full h-10 bg-white border border-orange-200 rounded-lg px-2 text-sm font-bold outline-none text-center text-orange-600" />
                     </div>
                     <div>
                       <label className="text-[10px] font-bold text-blue-600 block mb-1">休憩 (秒)</label>
-                      <NumberField value={ex.tabataRest ?? 10} min={1} max={600} onChange={v => updateExercise(ex.id, 'tabataRest', v)} className="w-full bg-white border border-blue-200 rounded-lg p-2 text-sm font-bold outline-none text-center text-blue-600" />
+                      <NumberField value={ex.tabataRest ?? 10} min={1} max={600} aria-label="タバタ休憩秒数" onChange={v => updateExercise(ex.id, 'tabataRest', v)} className="w-full h-10 bg-white border border-blue-200 rounded-lg px-2 text-sm font-bold outline-none text-center text-blue-600" />
                     </div>
-                    <div>
+                    <div className="col-span-2">
                       <label className="text-[10px] font-bold text-gray-600 block mb-1">サイクル数</label>
-                      <NumberField value={ex.tabataCycles ?? 8} min={1} max={50} onChange={v => updateExercise(ex.id, 'tabataCycles', v)} className="w-full bg-white border border-gray-300 rounded-lg p-2 text-sm font-bold outline-none text-center text-gray-700" />
+                      <Stepper value={ex.tabataCycles ?? 8} min={1} max={50} label="サイクル数" onChange={v => updateExercise(ex.id, 'tabataCycles', v)} />
                     </div>
                   </div>
                 )}
               </div>
-              {nextEx && (
+              {linkable && (
                 <div className="flex items-center justify-center py-1.5">
                   {isLinkedToNext ? (
                     <div className="flex items-center gap-1.5 bg-purple-50 border border-purple-200 rounded-full px-3 py-1">
                       <span className="text-[10px] font-bold text-purple-600">⚡ スーパーセット接続中</span>
-                      <button onClick={() => unlinkSuperset(ex.id, nextEx.id)} className="flex items-center gap-0.5 text-[10px] text-purple-400 hover:text-red-500 font-bold active:scale-95 transition-colors ml-1">
+                      <button onClick={() => unlinkSuperset(ex.id, linkable.id)} className="flex items-center gap-0.5 text-[10px] text-purple-400 hover:text-red-500 font-bold active:scale-95 transition-colors ml-1">
                         <Unlink2 size={11} /> 解除
                       </button>
                     </div>
                   ) : (
-                    <button onClick={() => linkSuperset(ex.id, nextEx.id)} className="flex items-center gap-1 text-[10px] text-gray-400 bg-white border border-dashed border-gray-300 px-3 py-1 rounded-full font-medium hover:border-purple-300 hover:text-purple-500 hover:bg-purple-50 active:scale-95 transition-colors">
+                    <button onClick={() => linkSuperset(ex.id, linkable.id)} className="flex items-center gap-1 text-[10px] text-gray-400 bg-white border border-dashed border-gray-300 px-3 py-1 rounded-full font-medium hover:border-purple-300 hover:text-purple-500 hover:bg-purple-50 active:scale-95 transition-colors">
                       <Link2 size={11} /> スーパーセット接続
                     </button>
                   )}
@@ -337,12 +523,27 @@ const PlanEditor = ({ initial, isNew, equipment, existingNames, onCancel, onSave
           )
         })}
 
-        <button onClick={addExercise} className="w-full mt-2 py-4 border-2 border-dashed border-gray-300 rounded-2xl text-gray-500 font-bold flex items-center justify-center gap-2 hover:bg-gray-100 hover:border-gray-400 transition-colors active:scale-95">
-          <Plus size={18} /> 種目を追加
-        </button>
+        <div className="grid grid-cols-2 gap-3 mt-2">
+          <button onClick={() => setPicker({ kind: 'add' })} className="py-4 border-2 border-dashed border-gray-300 rounded-2xl text-gray-500 font-bold flex items-center justify-center gap-2 hover:bg-gray-100 hover:border-gray-400 transition-colors active:scale-95">
+            <Plus size={18} /> 種目を追加
+          </button>
+          <button onClick={addCircuit} className="py-4 border-2 border-dashed border-emerald-300 rounded-2xl text-emerald-600 font-bold flex items-center justify-center gap-2 hover:bg-emerald-50 transition-colors active:scale-95">
+            <Repeat size={18} /> サーキット追加
+          </button>
+        </div>
       </div>
 
       <StretchListEditor phase="cooldown" items={draft.cooldown} onChange={cooldown => setDraft(prev => ({ ...prev, cooldown }))} />
+
+      {confirmCancel && <DiscardDialog onKeep={() => setConfirmCancel(false)} onDiscard={onCancel} />}
+      {picker && (
+        <ExercisePicker
+          library={library} usage={usage} equipment={equipment} actions={exerciseActions}
+          single={picker.kind === 'replace' || picker.kind === 'replace-station'}
+          title={picker.kind === 'replace' || picker.kind === 'replace-station' ? '種目を変更' : '種目を追加'}
+          onClose={() => setPicker(null)} onConfirm={handlePick}
+        />
+      )}
     </div>
   )
 }
@@ -371,6 +572,28 @@ const StretchSummary = ({ phase, items }: { phase: StretchPhase; items: Stretch[
 export const ExerciseList = ({ exercises }: { exercises: Exercise[] }) => (
   <div className="space-y-0">
     {exercises.map((ex, idx) => {
+      // サーキットは1枚のカードにまとめ、運動・休憩・周回数は共通として1回だけ表示する
+      if (ex.type === 'circuit') {
+        return (
+          <div key={ex.id} className="bg-white p-5 rounded-3xl shadow-sm border border-emerald-200 mb-4">
+            <div className="font-black text-emerald-700 mb-3 flex gap-2 text-lg items-center">
+              <Repeat size={18} />サーキット
+            </div>
+            <div className="flex flex-wrap gap-2 mb-3">
+              <span className="bg-gray-100 text-gray-600 text-xs font-bold rounded-lg px-3 py-1.5">🔁 {ex.targetSets}周</span>
+              <span className="bg-orange-50 text-orange-600 text-xs font-bold rounded-lg px-3 py-1.5">運動 {ex.defaultReps}秒</span>
+              <span className="bg-blue-50 text-blue-600 text-xs font-bold rounded-lg px-3 py-1.5 flex items-center gap-1"><Timer size={12} /> 休憩 {ex.interval}秒</span>
+            </div>
+            <ol className="space-y-1">
+              {(ex.stations ?? []).map((st, i) => (
+                <li key={st.id} className="text-sm font-bold text-gray-800 flex gap-2">
+                  <span className="text-emerald-500 opacity-70">{i + 1}.</span>{st.name}
+                </li>
+              ))}
+            </ol>
+          </div>
+        )
+      }
       const nextEx = exercises[idx + 1]
       const isInSuperset = !!ex.supersetGroup
       const isLinkedToNext = isInSuperset && nextEx?.supersetGroup === ex.supersetGroup
@@ -406,15 +629,18 @@ export const ExerciseList = ({ exercises }: { exercises: Exercise[] }) => (
 
 type View = { mode: 'list' } | { mode: 'detail'; id: string } | { mode: 'edit'; plan: WorkoutPlan; isNew: boolean }
 
-export default function PlanTab({ userId, plans, setPlans, equipment, records }: {
+export default function PlanTab({ userId, plans, setPlans, equipment, records, library, usage, exerciseActions }: {
   userId: string
   plans: WorkoutPlan[]
   setPlans: React.Dispatch<React.SetStateAction<WorkoutPlan[]>>
   equipment: EquipmentItem[]
   records: WorkoutRecord[]
+  library: ExerciseDef[]
+  usage: ExerciseUsage
+  exerciseActions: ExerciseActions
 }) {
   const [view, setView] = useState<View>({ mode: 'list' })
-  useEffect(() => { window.scrollTo?.(0, 0) }, [view.mode, view.mode === 'detail' ? view.id : null])
+  useEffect(() => { scrollAppToTop() }, [view.mode, view.mode === 'detail' ? view.id : null])
   const [confirmDelete, setConfirmDelete] = useState<WorkoutPlan | null>(null)
   const [error, setError] = useState<string | null>(null)
   const lastPerformed = lastPerformedMap(records)
@@ -459,6 +685,9 @@ export default function PlanTab({ userId, plans, setPlans, equipment, records }:
         initial={view.plan}
         isNew={view.isNew}
         equipment={equipment}
+        library={library}
+        usage={usage}
+        exerciseActions={exerciseActions}
         existingNames={plans.filter(p => p.id !== view.plan.id).map(p => p.name)}
         onCancel={() => setView(view.isNew ? { mode: 'list' } : { mode: 'detail', id: view.plan.id })}
         onSave={savePlan}
@@ -469,7 +698,7 @@ export default function PlanTab({ userId, plans, setPlans, equipment, records }:
   const detail = view.mode === 'detail' ? plans.find(p => p.id === view.id) : undefined
 
   return (
-    <div className="pb-28 max-w-2xl mx-auto p-5 bg-gray-50 min-h-screen">
+    <div className="pb-28 max-w-2xl mx-auto p-5 bg-gray-50">
       {error && (
         <div role="alert" className="mb-4 p-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-600">{error}</div>
       )}

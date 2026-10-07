@@ -1,8 +1,8 @@
 import React, { useMemo, useState } from 'react'
 import {
-  Play, Moon, CheckCircle, ChevronLeft, Minus, Plus, Timer, Sunrise, Sunset, Clock, Star, PlayCircle
+  Play, Moon, CheckCircle, ChevronLeft, Minus, Plus, Timer, Sunrise, Sunset, Clock, Star, PlayCircle, Repeat
 } from 'lucide-react'
-import { buildSession, estimatePlanMinutes, lastPerformedMap, recommendPlanId } from '../lib/plans'
+import { buildSession, estimatePlanMinutes, lastPerformedMap, recommendPlanId, segmentExercises } from '../lib/plans'
 import { daysAgo, daysOfWeek, formatDaysAgo, isSameDay } from '../lib/dates'
 import { EquipmentSelector, NumberField, NumberInputStepper } from './ui'
 import type {
@@ -99,6 +99,91 @@ const StretchSection = ({ phase, session, setSession, timer }: {
   )
 }
 
+// ─── Circuit card (in session) ───────────────────────────────────────────────
+
+/**
+ * サーキットは「1周ごとに全種目を順にこなす」形で表示する。
+ * セット数・休憩は種目ごとではなくサーキット共通（周回数・運動秒数・休憩秒数）として扱う。
+ */
+const CircuitSessionCard = ({ items, start, timer, onSetUpdate, onToggle, onRounds }: {
+  items: SessionExercise[]
+  start: number
+  timer: TimerControls
+  onSetUpdate: (exerciseIndex: number, setIndex: number, field: keyof SetData, value: number) => void
+  onToggle: (exerciseIndex: number, setIndex: number) => void
+  onRounds: (start: number, count: number, delta: number) => void
+}) => {
+  const rounds = items[0].sets.length
+  const rest = items[0].interval
+  const doneCount = items.reduce((n, ex) => n + ex.sets.filter(s => s.completed).length, 0)
+  return (
+    <div className="bg-white rounded-2xl shadow-sm overflow-hidden border-2 border-emerald-200 mb-6">
+      <div className="p-3 bg-emerald-50 border-b border-emerald-100 flex justify-between items-center flex-wrap gap-2">
+        <h3 className="font-black text-[15px] text-emerald-800 flex items-center gap-2 leading-tight">
+          <Repeat size={16} />サーキット
+          <span className="text-[10px] font-bold opacity-70">{doneCount}/{items.length * rounds}</span>
+        </h3>
+        <div className="flex items-center gap-2 ml-auto">
+          <span className="text-[10px] font-bold text-emerald-700 flex items-center gap-0.5"><Timer size={10} />休憩 {rest}秒</span>
+          <div className="flex items-center gap-1 bg-white border border-emerald-200 rounded-md p-0.5 shadow-sm">
+            <button onClick={() => onRounds(start, items.length, -1)} aria-label="周回を減らす" className="p-0.5 text-gray-500 hover:bg-gray-200 rounded transition-colors"><Minus size={12} /></button>
+            <span className="text-[10px] font-bold text-gray-600 px-1">{rounds} 周</span>
+            <button onClick={() => onRounds(start, items.length, 1)} aria-label="周回を増やす" className="p-0.5 text-gray-500 hover:bg-gray-200 rounded transition-colors"><Plus size={12} /></button>
+          </div>
+        </div>
+      </div>
+      <div className="p-2 space-y-3">
+        {Array.from({ length: rounds }, (_, r) => (
+          <div key={r}>
+            <div className="text-[10px] font-black text-emerald-600 tracking-widest px-1 mb-1">{r + 1}周目</div>
+            <div className="space-y-1.5">
+              {items.map((ex, i) => {
+                const set = ex.sets[r]
+                const exIdx = start + i
+                const hasWeight = ex.options.length > 1
+                return (
+                  <div key={ex.id} className={`flex items-center gap-2 p-2 rounded-xl ${set.completed ? 'bg-green-50' : 'bg-gray-50'}`}>
+                    <div className="flex-1 min-w-0">
+                      <div className={`text-sm font-bold truncate ${set.completed ? 'text-gray-400 line-through' : 'text-gray-800'}`}>{ex.name}</div>
+                      <div className="flex items-center gap-1 text-[10px] text-gray-500 font-bold">
+                        <NumberField value={set.reps} min={1} max={999} aria-label={`${ex.name} ${r + 1}周目の運動秒数`} onChange={v => onSetUpdate(exIdx, r, 'reps', v)} className="w-9 bg-white border border-gray-200 rounded text-center outline-none p-0.5" />秒
+                      </div>
+                    </div>
+                    {hasWeight && (
+                      <select
+                        value={set.weight} aria-label={`${ex.name} ${r + 1}周目の負荷`}
+                        onChange={e => onSetUpdate(exIdx, r, 'weight', Number(e.target.value))}
+                        className="h-9 max-w-[92px] px-1 bg-white border border-gray-200 rounded-lg text-[10px] font-bold text-gray-800 outline-none"
+                      >
+                        {ex.options.map((o, oi) => <option key={oi} value={o.weight}>{o.label}</option>)}
+                      </select>
+                    )}
+                    <button
+                      onClick={() => timer.startTimer('work', set.reps, exIdx, r, ex.interval)}
+                      disabled={set.completed}
+                      aria-label={`${ex.name} ${r + 1}周目のタイマーを開始`}
+                      className={`w-10 h-10 flex-shrink-0 flex justify-center items-center rounded-xl transition-all ${set.completed ? 'bg-gray-100 text-gray-300' : 'bg-orange-500 text-white active:scale-95'}`}
+                    >
+                      <Play size={16} fill="currentColor" className="ml-0.5" />
+                    </button>
+                    <button
+                      data-testid="set-check" onClick={() => onToggle(exIdx, r)}
+                      aria-label={`${ex.name} ${r + 1}周目を完了`}
+                      className={`w-10 h-10 flex-shrink-0 flex justify-center items-center rounded-xl transition-all ${set.completed ? 'text-white bg-green-500' : 'text-gray-400 bg-gray-100 active:bg-gray-200'}`}
+                    >
+                      <CheckCircle size={22} />
+                    </button>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 // ─── Active session ──────────────────────────────────────────────────────────
 
 const ActiveSession = ({ session, setSession, timer, onSaveWorkout, onCancel }: {
@@ -135,6 +220,11 @@ const ActiveSession = ({ session, setSession, timer, onSaveWorkout, onCancel }: 
     })
   }
 
+  // サーキットの周回数は全ステーション共通なので、まとめて増減する
+  const handleRoundsChange = (start: number, count: number, delta: number) => {
+    for (let i = 0; i < count; i++) handleSetCountChange(start + i, delta)
+  }
+
   const handleExerciseUpdate = (exerciseIndex: number, field: keyof SessionExercise, value: number) => {
     setSession(prev => prev && ({
       ...prev,
@@ -154,8 +244,8 @@ const ActiveSession = ({ session, setSession, timer, onSaveWorkout, onCancel }: 
     if (isCompletedNow) {
       const ex = session.exercises[exerciseIndex]
       let shouldRest = true
-      if (ex.supersetGroup) {
-        // Only start rest after the last exercise in the superset group
+      if (ex.supersetGroup && !ex.circuit) {
+        // スーパーセットは、グループ最後の種目の後だけ休憩する（サーキットは各ステーションの後に休憩）
         const lastGroupIdx = session.exercises.reduce((last, e, i) => (e.supersetGroup === ex.supersetGroup ? i : last), -1)
         shouldRest = exerciseIndex === lastGroupIdx
       }
@@ -165,7 +255,7 @@ const ActiveSession = ({ session, setSession, timer, onSaveWorkout, onCancel }: 
 
   return (
     <div className="pb-36 max-w-2xl mx-auto p-3 relative">
-      <div className="mb-6 p-4 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-2xl shadow-lg flex justify-between items-center sticky top-16 z-30">
+      <div className="mb-6 p-4 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-2xl shadow-lg flex justify-between items-center sticky top-2 z-30">
         <div className="flex items-center gap-2 min-w-0">
           <button onClick={onCancel} aria-label="トレーニングを中止" className="p-1 hover:bg-white/20 rounded-lg transition-colors active:scale-95">
             <ChevronLeft size={24} />
@@ -180,7 +270,17 @@ const ActiveSession = ({ session, setSession, timer, onSaveWorkout, onCancel }: 
 
       <StretchSection phase="warmup" session={session} setSession={setSession} timer={timer} />
 
-      {session.exercises.map((ex, exIdx) => {
+      {segmentExercises(session.exercises).map(seg => {
+        if (seg.kind === 'circuit') {
+          return (
+            <CircuitSessionCard
+              key={seg.group} items={seg.items} start={seg.start} timer={timer}
+              onSetUpdate={handleSetUpdate} onToggle={toggleSetComplete} onRounds={handleRoundsChange}
+            />
+          )
+        }
+        const exIdx = seg.start
+        const ex = seg.items[0]
         const nextSessionEx = session.exercises[exIdx + 1]
         const isSessionInSuperset = !!ex.supersetGroup
         const isSessionLinkedToNext = isSessionInSuperset && nextSessionEx?.supersetGroup === ex.supersetGroup
@@ -357,6 +457,17 @@ export default function WorkoutTab(props: WorkoutTabProps) {
               <div className="text-xs text-amber-700 font-bold flex items-center gap-1 pb-1"><Sunrise size={12} />ウォームアップ {selected.warmup.length}項目</div>
             )}
             {selected.exercises.map((ex, i) => {
+              if (ex.type === 'circuit') {
+                return (
+                  <div key={ex.id} className="text-sm text-gray-700 flex items-center justify-between py-0.5 border-l-2 border-emerald-400 pl-2 -ml-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="text-[8px] bg-emerald-100 text-emerald-600 px-1 rounded font-black flex-shrink-0">サーキット</span>
+                      <span className="truncate">{(ex.stations ?? []).map(x => x.name).join(' → ')}</span>
+                    </div>
+                    <span className="text-gray-400 text-xs flex-shrink-0 ml-2">{ex.targetSets}周</span>
+                  </div>
+                )
+              }
               const next = selected.exercises[i + 1]
               const inSS = !!ex.supersetGroup
               const linked = inSS && next?.supersetGroup === ex.supersetGroup
