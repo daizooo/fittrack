@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { Check, ChevronLeft, Plus, Search, X } from 'lucide-react'
-import { MUSCLE_GROUPS, KIND_LABELS, muscleLabel, normName } from '../lib/exerciseLibrary'
+import { MUSCLE_GROUPS, KIND_LABELS, matchesMuscle, muscleLabel, normName } from '../lib/exerciseLibrary'
 import { formatDaysAgo, daysAgo } from '../lib/dates'
 import type { EquipmentItem, ExerciseDef, ExerciseKind, MuscleGroup } from '../types'
 
@@ -29,7 +29,7 @@ export type ExerciseUsage = Map<string, { sessions: number; lastDate: string }>
 export const filterExercises = (library: ExerciseDef[], query: string, muscle: MuscleGroup | 'all') => {
   const q = normName(query)
   return library.filter(d =>
-    (muscle === 'all' || d.muscle === muscle) &&
+    (muscle === 'all' || matchesMuscle(d.muscle, muscle)) &&
     (!q || [d.name, ...(d.aliases ?? [])].some(n => normName(n).includes(q)))
   )
 }
