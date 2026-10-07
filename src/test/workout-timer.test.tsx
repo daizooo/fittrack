@@ -105,6 +105,44 @@ describe('サーキットのタイマーは次の種目へ自動で進む', () =
   })
 })
 
+describe('動いているタイマーが、どの種目か分かる', () => {
+  const rowOf = (el: HTMLElement) => el.closest('div.rounded-xl') as HTMLElement
+
+  it('実行中の種目の行に枠と残り秒数が出て、休憩中は次の種目が示される', async () => {
+    await startCircuitWorkout()
+    expect(screen.queryByRole('timer')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByLabelText('プッシュアップ 1周目のタイマーを開始'))
+    const running = rowOf(screen.getByRole('timer'))
+    expect(running).toHaveTextContent('プッシュアップ')
+    expect(running.className).toContain('ring-orange-400')
+    expect(running).toHaveTextContent('実施中')
+    expect(screen.getByLabelText('プッシュアップ 1周目のタイマーを一時停止')).toBeInTheDocument()
+    // ほかの種目の行には枠が出ない
+    expect(rowOf(screen.getByLabelText('スクワット 1周目を完了')).className).not.toContain('ring-2')
+
+    await advance(6_000 + 1_000) // 運動が終わり、休憩へ
+    const next = rowOf(screen.getByRole('timer'))
+    expect(next).toHaveTextContent('スクワット')
+    expect(next.className).toContain('ring-blue-300')
+    expect(next).toHaveTextContent('次 ・ 休憩')
+
+    await advance(3_500) // 次の種目の運動が始まると、枠がそちらへ移る
+    const moved = rowOf(screen.getByRole('timer'))
+    expect(moved).toHaveTextContent('スクワット')
+    expect(moved.className).toContain('ring-orange-400')
+  })
+
+  it('行の一時停止ボタンで止めて、再開できる', async () => {
+    await startCircuitWorkout()
+    fireEvent.click(screen.getByLabelText('プッシュアップ 1周目のタイマーを開始'))
+    fireEvent.click(screen.getByLabelText('プッシュアップ 1周目のタイマーを一時停止'))
+    expect(rowOf(screen.getByRole('timer'))).toHaveTextContent('一時停止中')
+    fireEvent.click(screen.getByLabelText('プッシュアップ 1周目のタイマーを再開'))
+    expect(rowOf(screen.getByRole('timer'))).toHaveTextContent('実施中')
+  })
+})
+
 describe('タイマーの一時停止', () => {
   it('一時停止すると時間が進まず、再開すると残りから続きが動く', async () => {
     await startCircuitWorkout()
