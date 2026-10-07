@@ -3,6 +3,7 @@ import type {
   SessionData, SetData, EquipmentOption
 } from '../types'
 import { daysOfWeek } from './dates'
+import { sameExercise } from './exerciseLibrary'
 
 // ─── DB row mapping ──────────────────────────────────────────────────────────
 
@@ -68,7 +69,7 @@ export const createCircuit = (): Exercise => ({
   id: newId('ci'), name: 'サーキット', type: 'circuit',
   targetSets: CIRCUIT_DEFAULTS.rounds, defaultReps: CIRCUIT_DEFAULTS.work, interval: CIRCUIT_DEFAULTS.rest,
   defaultWeight: 0, equipmentType: 'bodyweight',
-  stations: [createStation(), createStation()]
+  stations: []
 })
 
 /**
@@ -181,11 +182,11 @@ export const buildSession = (
     // 周回数＝セット数、運動秒数＝回数(秒)、休憩は共通。前回の記録からは負荷だけを引き継ぐ
     if (ex.type === 'circuit') {
       return (ex.stations ?? []).map(st => {
-        const lastWorkout = records.find(r => r.type === 'workout' && r.exercises.some(e => e.name === st.name))
-        const lastEx = lastWorkout?.exercises.find(e => e.name === st.name)
+        const lastWorkout = records.find(r => r.type === 'workout' && r.exercises.some(e => sameExercise(e, st)))
+        const lastEx = lastWorkout?.exercises.find(e => sameExercise(e, st))
         const weightAt = (i: number) => lastEx ? (lastEx.sets[i] ?? lastEx.sets[lastEx.sets.length - 1])?.weight ?? st.defaultWeight : st.defaultWeight
         return {
-          id: st.id, name: st.name, type: 'duration', targetSets: ex.targetSets, defaultReps: ex.defaultReps,
+          id: st.id, exerciseId: st.exerciseId, name: st.name, type: 'duration', targetSets: ex.targetSets, defaultReps: ex.defaultReps,
           defaultWeight: st.defaultWeight, interval: ex.interval, equipmentType: st.equipmentType,
           supersetGroup: ex.id, circuit: true, inherited: !!lastEx,
           options: equipmentOptionsMap.get(st.equipmentType) ?? [{ label: 'ー', weight: 0 }],
@@ -196,8 +197,8 @@ export const buildSession = (
         }
       })
     }
-    const lastWorkout = records.find(r => r.type === 'workout' && r.exercises.some(e => e.name === ex.name))
-    const lastEx = lastWorkout ? lastWorkout.exercises.find(e => e.name === ex.name) : null
+    const lastWorkout = records.find(r => r.type === 'workout' && r.exercises.some(e => sameExercise(e, ex)))
+    const lastEx = lastWorkout ? lastWorkout.exercises.find(e => sameExercise(e, ex)) : null
     const inherited = !!lastEx
 
     let sets: SetData[]

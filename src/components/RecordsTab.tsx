@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { CalendarDays, CheckCircle, ChevronRight, Dumbbell, Flame, Moon, Target, Trophy, X, Zap, Sunrise, Sunset } from 'lucide-react'
 import { computeStats, filterRecordsByPeriod, monthCalendarCells, workoutDaysByMonth, type PeriodMode } from '../lib/stats'
-import { amountUnit, exerciseHistory, loadLabel, setLabel, summarizeExercises } from '../lib/exerciseStats'
+import { amountUnit, exerciseHistory, exerciseKey, loadLabel, setLabel, summarizeExercises } from '../lib/exerciseStats'
 import { isSameDay } from '../lib/dates'
 import { PeriodFilter } from './ui'
 import type { WorkoutRecord } from '../types'
@@ -21,7 +21,7 @@ const ModalFrame = ({ onClose, children }: { onClose: () => void; children: Reac
 export const RecordDetailModal = ({ record, onClose, onOpenExercise }: {
   record: WorkoutRecord
   onClose: () => void
-  onOpenExercise?: (name: string) => void
+  onOpenExercise?: (key: string) => void
 }) => {
   const stretchLine = (label: string, list: { completed: boolean }[] | undefined, Icon: typeof Sunrise, cls: string) =>
     list && list.length > 0 ? (
@@ -54,7 +54,7 @@ export const RecordDetailModal = ({ record, onClose, onOpenExercise }: {
                 <div key={idx} className="bg-gray-50 p-3 rounded-2xl border border-gray-100">
                   <div className="flex justify-between items-center mb-2">
                     {onOpenExercise && completedSets > 0 ? (
-                      <button onClick={() => onOpenExercise(ex.name)} className="font-bold text-sm text-blue-700 flex items-center gap-0.5 text-left">
+                      <button onClick={() => onOpenExercise(exerciseKey(ex))} className="font-bold text-sm text-blue-700 flex items-center gap-0.5 text-left">
                         {ex.name}<ChevronRight size={14} />
                       </button>
                     ) : (
@@ -84,15 +84,16 @@ export const RecordDetailModal = ({ record, onClose, onOpenExercise }: {
 
 // ─── Exercise detail modal（種目ごとの推移と自己ベスト） ───────────────────────
 
-export const ExerciseDetailModal = ({ name, records, onClose, onOpenRecord }: {
-  name: string
+export const ExerciseDetailModal = ({ exerciseKey: key, records, onClose, onOpenRecord }: {
+  exerciseKey: string
   records: WorkoutRecord[]
   onClose: () => void
-  onOpenRecord: (record: WorkoutRecord) => void
+  onOpenRecord?: (record: WorkoutRecord) => void
 }) => {
-  const history = useMemo(() => exerciseHistory(records, name), [records, name])
+  const history = useMemo(() => exerciseHistory(records, key), [records, key])
   const latest = history[0]
   if (!latest) return null
+  const name = latest.exercise.name
   const unit = amountUnit(latest.exercise.type)
   const bestAmount = Math.max(...history.map(h => h.bestAmount))
   const weights = history.map(h => h.maxWeight).filter((w): w is number => w !== null)
@@ -146,7 +147,7 @@ export const ExerciseDetailModal = ({ name, records, onClose, onOpenRecord }: {
           {history.map(h => (
             <button
               key={`${h.recordId}-${h.exercise.id}`}
-              onClick={() => { const r = records.find(x => x.id === h.recordId); if (r) onOpenRecord(r) }}
+              onClick={() => { const r = records.find(x => x.id === h.recordId); if (r && onOpenRecord) onOpenRecord(r) }}
               className="w-full text-left bg-gray-50 p-3 rounded-2xl border border-gray-100 active:bg-gray-100"
             >
               <div className="flex items-center justify-between mb-1">
@@ -174,7 +175,7 @@ export default function RecordsTab({ records }: { records: WorkoutRecord[] }) {
   const [mode, setMode] = useState<PeriodMode>('month')
   const [anchor, setAnchor] = useState(new Date())
   const [detail, setDetail] = useState<WorkoutRecord | null>(null)
-  const [exerciseName, setExerciseName] = useState<string | null>(null)
+  const [openExerciseKey, setExerciseKey] = useState<string | null>(null)
 
   const periodRecords = useMemo(() => filterRecordsByPeriod(records, mode, anchor), [records, mode, anchor])
   const stats = useMemo(() => computeStats(periodRecords), [periodRecords])
@@ -292,7 +293,7 @@ export default function RecordsTab({ records }: { records: WorkoutRecord[] }) {
               {exercises.map(ex => {
                 const unit = amountUnit(ex.type)
                 return (
-                  <button key={ex.name} onClick={() => setExerciseName(ex.name)} className="w-full flex items-center gap-3 py-2.5 text-left active:bg-gray-50">
+                  <button key={ex.key} onClick={() => setExerciseKey(ex.key)} className="w-full flex items-center gap-3 py-2.5 text-left active:bg-gray-50">
                     <div className="flex-1 min-w-0">
                       <div className="font-bold text-gray-800 text-sm truncate">{ex.name}</div>
                       <div className="text-[11px] text-gray-500">{ex.sessions}回 · {ex.completedSets}セット · 計{ex.amount.toLocaleString()}{unit}</div>
@@ -347,15 +348,15 @@ export default function RecordsTab({ records }: { records: WorkoutRecord[] }) {
         <RecordDetailModal
           record={detail}
           onClose={() => setDetail(null)}
-          onOpenExercise={name => { setDetail(null); setExerciseName(name) }}
+          onOpenExercise={key => { setDetail(null); setExerciseKey(key) }}
         />
       )}
-      {exerciseName && (
+      {openExerciseKey && (
         <ExerciseDetailModal
-          name={exerciseName}
+          exerciseKey={openExerciseKey}
           records={records}
-          onClose={() => setExerciseName(null)}
-          onOpenRecord={r => { setExerciseName(null); setDetail(r) }}
+          onClose={() => setExerciseKey(null)}
+          onOpenRecord={r => { setExerciseKey(null); setDetail(r) }}
         />
       )}
     </div>

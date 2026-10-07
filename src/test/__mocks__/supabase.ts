@@ -23,6 +23,7 @@ export const resetMockDB = (opts: { newUser?: boolean } = {}) => {
   }))
   stores.profiles = opts.newUser ? [] : [completeProfile()]
   stores.body_logs = []
+  stores.exercises = []
 }
 resetMockDB()
 
@@ -47,8 +48,14 @@ const makeQuery = (table: string) => {
   let mode: 'many' | 'single' | 'maybeSingle' = 'many'
   let written: Row[] | null = null
   let del = false
+  let patch: Row | null = null
 
   const run = () => {
+    if (patch) {
+      const hit = (stores[table] ?? []).filter(r => Object.entries(filter).every(([k, v]) => r[k] === v))
+      hit.forEach(r => Object.assign(r, patch))
+      return { data: null, error: null }
+    }
     if (del) {
       stores[table] = (stores[table] ?? []).filter(r => !Object.entries(filter).every(([k, v]) => r[k] === v))
       return { data: null, error: null }
@@ -77,6 +84,7 @@ const makeQuery = (table: string) => {
     upsert: (data: unknown, _opts?: unknown) => { written = write(table, 'upsert', data); return q },
     insert: (data: unknown) => { written = write(table, 'insert', data); return q },
     delete: () => { del = true; return q },
+    update: (data: Row) => { patch = data; return q },
     then: (resolve: (v: unknown) => unknown, reject?: (e: unknown) => unknown) =>
       Promise.resolve(run()).then(resolve, reject),
   }

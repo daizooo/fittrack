@@ -6,6 +6,7 @@ import { render, screen, fireEvent, waitFor, act, within } from '@testing-librar
 import userEvent from '@testing-library/user-event'
 import { resetMockDB, getMockTable, getMockRecords, TEST_USER_ID } from './__mocks__/supabase'
 import { LOWER_PLAN_NAME } from './fixtures/plans'
+import { addExercisesViaPicker, editorExerciseNames } from './helpers'
 
 vi.mock('../lib/supabase', () => import('./__mocks__/supabase'))
 
@@ -48,10 +49,8 @@ describe('プラン編集 – 入力が1文字で途切れない（回帰テス�
     expect(nameInput).toHaveValue('脚の日スペシャル')
     expect(document.activeElement).toBe(nameInput)
 
-    await user.click(screen.getByText('種目を追加'))
-    const exName = screen.getByLabelText('種目名')
-    await user.type(exName, 'スクワット')
-    expect(exName).toHaveValue('スクワット')
+    await addExercisesViaPicker(user, 'スクワット')
+    expect(editorExerciseNames()).toEqual(['スクワット'])
 
     await user.click(screen.getAllByText('追加')[0]) // ウォームアップの「追加」
     const stName = screen.getByLabelText('ウォームアップストレッチ名')
@@ -64,7 +63,7 @@ describe('プラン編集 – 入力が1文字で途切れない（回帰テス�
     await renderAndWaitLoad()
     await user.click(screen.getByText('プラン'))
     await user.click(screen.getByText('新しいプランを作成'))
-    await user.click(screen.getByText('種目を追加'))
+    await addExercisesViaPicker(user, 'スクワット')
 
     const restInput = screen.getAllByRole('spinbutton').find(el => (el as HTMLInputElement).value === '60')!
     await user.clear(restInput)
@@ -81,8 +80,7 @@ describe('プランの作成・保存', () => {
     await user.click(screen.getByText('新しいプランを作成'))
 
     await user.type(screen.getByLabelText('プラン名'), '全身サーキット')
-    await user.click(screen.getByText('種目を追加'))
-    await user.type(screen.getByLabelText('種目名'), 'バーピー')
+    await addExercisesViaPicker(user, 'バーピー')
     await user.selectOptions(screen.getByLabelText('ウォームアップの定番から追加'), '0')
     await user.selectOptions(screen.getByLabelText('クールダウンの定番から追加'), '0')
     await user.click(screen.getByText('保存'))
@@ -90,7 +88,7 @@ describe('プランの作成・保存', () => {
     await waitFor(() => expect(screen.getByRole('heading', { name: '全身サーキット' })).toBeInTheDocument())
     const saved = getMockTable('workout_plans').find(r => r.name === '全身サーキット')!
     expect(saved).toBeDefined()
-    expect((saved.exercises as { name: string }[])[0].name).toBe('バーピー')
+    expect((saved.exercises as { name: string; exerciseId: string }[])[0]).toMatchObject({ name: 'バーピー', exerciseId: 'sys:burpee' })
     expect((saved.warmup as { name: string }[])[0].name).toBe('アームサークル')
     expect((saved.cooldown as { name: string; bilateral?: boolean }[])[0]).toMatchObject({ name: '胸のストレッチ', bilateral: true })
   })
@@ -225,7 +223,7 @@ describe('記録タブ（履歴＋分析の統合）', () => {
     await waitFor(() => expect(screen.getByText('種目別の記録')).toBeInTheDocument())
 
     // プランではなく種目で集計される（2つのプランの実施が「懸垂」1行にまとまる）
-    fireEvent.click(screen.getByRole('button', { name: /懸垂.*2回 · 4セット · 計31回/ }))
+    fireEvent.click(screen.getByRole('button', { name: /チンニング.*2回 · 4セット · 計31回/ })) // 旧データの「懸垂」は標準種目「チンニング」の別名として同じ種目に集約される
     const modal = await screen.findByText('これまで 2 回実施')
     const dialog = modal.closest('div.relative') as HTMLElement
     expect(within(dialog).getByText('自己ベスト')).toBeInTheDocument()
@@ -235,7 +233,7 @@ describe('記録タブ（履歴＋分析の統合）', () => {
     // 履歴の1回をタップすると、そのワークアウトの詳細へ。種目名から種目詳細へ戻れる
     fireEvent.click(within(dialog).getByText('d1 (月)'))
     expect(await screen.findByText('プランA')).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: '懸垂' }))
+    fireEvent.click(screen.getByRole('button', { name: 'チンニング' }))
     expect(await screen.findByText('これまで 2 回実施')).toBeInTheDocument()
   })
 })

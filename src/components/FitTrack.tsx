@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react'
-import { Dumbbell, CalendarDays, BarChart3, LogOut, User, Play, Timer, X, AlertTriangle } from 'lucide-react'
+import { Dumbbell, CalendarDays, BarChart3, BookOpen, LogOut, User, Play, Timer, X, AlertTriangle } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { generateEquipmentOptions, DEFAULT_LOAD_EQUIPMENT } from '../lib/equipmentUtils'
 import { getAudioCtx, playBeep } from '../lib/audio'
@@ -8,14 +8,21 @@ import { defaultPlanSeeds } from '../lib/defaultPlans'
 import { planFromRow, planToRow, uuid, type WorkoutPlanRow } from '../lib/plans'
 import { UnsavedGuardContext, type UnsavedGuard } from '../lib/unsavedGuard'
 import { APP_SCROLL_ID, DiscardDialog } from './ui'
+import {
+  applyLibraryToPlans, applyLibraryToRecords, buildLibrary, buildNameIndex, defFromRow, defToRow, isNameTaken,
+  unresolvedPlanNames, unresolvedRecordNames, type ExerciseRow
+} from '../lib/exerciseLibrary'
+import { summarizeExercises } from '../lib/exerciseStats'
 import TabProfile from './TabProfile'
+import ExercisesTab from './ExercisesTab'
+import type { ExerciseActions, ExerciseInput, ExerciseUsage } from './ExercisePicker'
 import PlanTab from './PlanTab'
 import WorkoutTab, { type TimerControls } from './WorkoutTab'
 import RecordsTab from './RecordsTab'
 import Onboarding, { type OnboardingValues } from './Onboarding'
 import type {
   WorkoutPlan, WorkoutRecord, TimerState, SessionData, SessionExercise, SessionStretches,
-  EquipmentOption, EquipmentItem, Profile, BodyLog, StretchPhase
+  EquipmentOption, EquipmentItem, Profile, BodyLog, StretchPhase, ExerciseDef
 } from '../types'
 
 const defaultTimerState: TimerState = {
@@ -24,7 +31,7 @@ const defaultTimerState: TimerState = {
   tabataWork: 0, tabataRest: 0, tabataCycles: 0, currentCycle: 0, stretch: null
 }
 
-type Tab = 'plan' | 'record' | 'history' | 'profile'
+type Tab = 'plan' | 'record' | 'history' | 'exercises' | 'profile'
 
 // ─── Bottom Navigation (defined outside FitTrack to prevent remount on timer ticks) ──
 
@@ -32,14 +39,15 @@ const NAV_ITEMS: { tab: Tab; label: string; Icon: typeof Dumbbell }[] = [
   { tab: 'plan', label: 'プラン', Icon: CalendarDays },
   { tab: 'record', label: 'ワークアウト', Icon: Dumbbell },
   { tab: 'history', label: '記録', Icon: BarChart3 },
+  { tab: 'exercises', label: '種目', Icon: BookOpen },
   { tab: 'profile', label: 'プロフィール', Icon: User }
 ]
 
 const BottomNav = ({ activeTab, setActiveTab }: { activeTab: Tab; setActiveTab: (tab: Tab) => void }) => (
   <div className="flex-shrink-0 w-full bg-white border-t border-gray-200 pb-safe z-40 shadow-[0_-10px_40px_rgba(0,0,0,0.05)]">
-    <div className="flex justify-around items-center h-20 max-w-md mx-auto px-2">
+    <div className="flex justify-around items-center h-20 max-w-md mx-auto px-1">
       {NAV_ITEMS.map(({ tab, label, Icon }) => (
-        <button key={tab} onClick={() => setActiveTab(tab)} className={`flex flex-col items-center justify-center w-1/4 h-full transition-all ${activeTab === tab ? 'text-blue-600 -translate-y-1' : 'text-gray-400'}`}>
+        <button key={tab} onClick={() => setActiveTab(tab)} className={`flex flex-col items-center justify-center w-1/5 h-full transition-all ${activeTab === tab ? 'text-blue-600 -translate-y-1' : 'text-gray-400'}`}>
           <Icon size={24} strokeWidth={activeTab === tab ? 2.5 : 2} /><span className="text-[10px] mt-1 font-bold">{label}</span>
         </button>
       ))}
@@ -61,6 +69,12 @@ export default function FitTrack({ userId }: { userId: string }) {
   const [dataLoading, setDataLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [toast, setToast] = useState<string | null>(null)
+
+  // 種目マスタ: 標準の種目（アプリ内カタログ）＋自作の種目（DB）
+  const [customExercises, setCustomExercises] = useState<ExerciseDef[]>([])
+  const customRef = useRef(customExercises)
+  useEffect(() => { customRef.current = customExercises }, [customExercises])
+  const exercisesAvailable = useRef(true)
 
   const [currentSession, setCurrentSession] = useState<SessionData | null>(null)
   const sessionRef = useRef(currentSession)
@@ -110,11 +124,89 @@ export default function FitTrack({ userId }: { userId: string }) {
     return map
   }, [equipment])
 
+  const library = useMemo(() => buildLibrary(customExercises), [customExercises])
+  // プラン・記録の種目に exerciseId を付け、表示名を種目マスタの名前に揃える（DB の中身は書き換えない）
+  const planList = useMemo(() => applyLibraryToPlans(plans, library), [plans, library])
+  const recordList = useMemo(() => applyLibraryToRecords(records, library), [records, library])
+  const usage = useMemo<ExerciseUsage>(() => {
+    const map: ExerciseUsage = new Map()
+    summarizeExercises(recordList).forEach(s => map.set(s.key, { sessions: s.sessions, lastDate: s.lastDate }))
+    return map
+  }, [recordList])
+
   useEffect(() => {
     if (!toast) return
     const t = setTimeout(() => setToast(null), 5000)
     return () => clearTimeout(t)
   }, [toast])
+
+  // ── 種目マスタ ──────────────────────────────────────────────────────────────
+
+  /** ID の無い旧データの種目名を、自作の種目として登録する（標準の種目と名前が一致するものは登録しない） */
+  const registerLegacyExercises = async (
+    planSrc: WorkoutPlan[], recordSrc: WorkoutRecord[], current: ExerciseDef[], equipmentIds: string[]
+  ): Promise<ExerciseDef[]> => {
+    const index = buildNameIndex(buildLibrary(current))
+    const names = new Map<string, ReturnType<typeof unresolvedPlanNames>[number]>()
+    ;[...unresolvedPlanNames(planSrc, index), ...unresolvedRecordNames(recordSrc, index)].forEach(n => {
+      if (!names.has(n.name)) names.set(n.name, n)
+    })
+    if (names.size === 0 || !exercisesAvailable.current) return current
+    const created: ExerciseDef[] = [...names.values()].map(n => ({
+      id: uuid(), name: n.name, muscle: 'other', kind: n.kind, note: '', builtin: false,
+      equipmentType: equipmentIds.includes(n.equipmentType) ? n.equipmentType : 'bodyweight'
+    }))
+    const { error } = await supabase.from('exercises').insert(created.map(d => defToRow(d, userId)))
+    if (error) {
+      console.error('Failed to register exercises:', error)
+      return current
+    }
+    return [...current, ...created]
+  }
+
+  const equipmentIdsRef = useRef<string[]>([])
+  useEffect(() => { equipmentIdsRef.current = equipment.filter(e => e.category === 'load').map(e => e.id) }, [equipment])
+
+  const sessionRefForUsage = useRef(usage)
+  useEffect(() => { sessionRefForUsage.current = usage }, [usage])
+  const plansRefForUsage = useRef(planList)
+  useEffect(() => { plansRefForUsage.current = planList }, [planList])
+
+  const exerciseActions = useMemo<ExerciseActions>(() => ({
+    create: async (input: ExerciseInput) => {
+      const name = input.name.trim()
+      if (!name) return '種目名を入力してください'
+      if (isNameTaken(buildLibrary(customRef.current), name)) return '同じ名前の種目が既にあります'
+      if (!exercisesAvailable.current) return '種目テーブルがありません。Supabase に migration 004（exercises）を適用してください'
+      const def: ExerciseDef = { id: uuid(), builtin: false, ...input, name }
+      const { error } = await supabase.from('exercises').insert(defToRow(def, userId))
+      if (error) { console.error('Failed to create exercise:', error); return `作成に失敗しました: ${error.message}` }
+      setCustomExercises(prev => [...prev, def])
+      return def
+    },
+    update: async (id, input) => {
+      const name = input.name.trim()
+      if (!name) return '種目名を入力してください'
+      if (isNameTaken(buildLibrary(customRef.current), name, id)) return '同じ名前の種目が既にあります'
+      const { error } = await supabase.from('exercises')
+        .update({ name, muscle: input.muscle, kind: input.kind, equipment_type: input.equipmentType, note: input.note })
+        .eq('id', id).eq('user_id', userId)
+      if (error) { console.error('Failed to update exercise:', error); return `保存に失敗しました: ${error.message}` }
+      setCustomExercises(prev => prev.map(d => (d.id === id ? { ...d, ...input, name } : d)))
+      return null
+    },
+    remove: async id => {
+      // 記録は種目ごとに蓄積するため、記録のある種目・プランで使用中の種目は削除させない
+      if (sessionRefForUsage.current.has(id)) return '実施記録があるため削除できません'
+      if (plansRefForUsage.current.some(p => p.exercises.some(ex => ex.exerciseId === id || (ex.stations ?? []).some(st => st.exerciseId === id)))) {
+        return 'プランで使われているため削除できません。先にプランから外してください'
+      }
+      const { error } = await supabase.from('exercises').delete().eq('id', id).eq('user_id', userId)
+      if (error) { console.error('Failed to delete exercise:', error); return `削除に失敗しました: ${error.message}` }
+      setCustomExercises(prev => prev.filter(d => d.id !== id))
+      return null
+    }
+  }), [userId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Data loading ────────────────────────────────────────────────────────────
 
@@ -132,7 +224,8 @@ export default function FitTrack({ userId }: { userId: string }) {
           setLoadError('プランを読み込めませんでした。Supabase に migration 003（workout_plans）が適用されているか確認してください。')
           return
         }
-        setPlans((plansData as WorkoutPlanRow[] ?? []).map(planFromRow))
+        const loadedPlans = (plansData as WorkoutPlanRow[] ?? []).map(planFromRow)
+        setPlans(loadedPlans)
 
         const { data: recordsData } = await supabase
           .from('records')
@@ -140,8 +233,9 @@ export default function FitTrack({ userId }: { userId: string }) {
           .eq('user_id', userId)
           .order('full_date', { ascending: false })
 
+        let loadedRecords: WorkoutRecord[] = []
         if (recordsData) {
-          setRecords(recordsData.map(r => ({
+          loadedRecords = recordsData.map(r => ({
             id: r.id as number,
             date: r.date as string,
             fullDate: r.full_date as string,
@@ -150,7 +244,8 @@ export default function FitTrack({ userId }: { userId: string }) {
             type: r.type as 'workout' | 'rest',
             exercises: (r.exercises ?? []) as SessionExercise[],
             stretches: (r.stretches ?? null) as SessionStretches | null
-          })))
+          }))
+          setRecords(loadedRecords)
         }
 
         const { data: equipmentData } = await supabase
@@ -159,14 +254,16 @@ export default function FitTrack({ userId }: { userId: string }) {
           .eq('user_id', userId)
           .order('created_at', { ascending: true })
 
+        let loadedEquipment: EquipmentItem[] = DEFAULT_LOAD_EQUIPMENT
         if (equipmentData && equipmentData.length > 0) {
-          setEquipment(equipmentData.map(e => ({
+          loadedEquipment = equipmentData.map(e => ({
             id: e.id as string,
             name: e.name as string,
             category: e.category as 'load' | 'data',
             direction: e.direction as '+' | '-' | null,
             weight: e.weight as EquipmentItem['weight']
-          })))
+          }))
+          setEquipment(loadedEquipment)
         } else {
           // First login — seed default load equipment
           setEquipment(DEFAULT_LOAD_EQUIPMENT)
@@ -180,6 +277,22 @@ export default function FitTrack({ userId }: { userId: string }) {
               weight: item.weight
             }))
           )
+        }
+
+        // 種目マスタ（自作の種目）。旧データの種目名は初回に自作の種目として登録する
+        const { data: exerciseData, error: exerciseError } = await supabase
+          .from('exercises')
+          .select('*')
+          .eq('user_id', userId)
+          .order('created_at', { ascending: true })
+        if (exerciseError) {
+          console.error('Failed to load exercises:', exerciseError)
+          exercisesAvailable.current = false
+          setToast('種目テーブルを読み込めませんでした。Supabase に migration 004（exercises）を適用してください。')
+        } else {
+          const custom = (exerciseData as ExerciseRow[] ?? []).map(defFromRow)
+          const ids = loadedEquipment.filter(e => e.category === 'load').map(e => e.id)
+          setCustomExercises(await registerLegacyExercises(loadedPlans, loadedRecords, custom, ids))
         }
 
         const { data: profileData, error: profileError } = await supabase
@@ -243,7 +356,10 @@ export default function FitTrack({ userId }: { userId: string }) {
       const seeded = defaultPlanSeeds.map((p, i) => ({ ...p, id: uuid(), sortOrder: i + 1 }))
       const { error: seedError } = await supabase.from('workout_plans').insert(seeded.map(p => planToRow(p, userId)))
       if (seedError) console.error('Failed to seed plans:', seedError)
-      else setPlans(seeded)
+      else {
+        setPlans(seeded)
+        setCustomExercises(await registerLegacyExercises(seeded, [], customRef.current, equipmentIdsRef.current))
+      }
     }
 
     setProfile(newProfile)
@@ -455,12 +571,15 @@ export default function FitTrack({ userId }: { userId: string }) {
 
       <main id={APP_SCROLL_ID} className="flex-1 min-h-0 overflow-y-auto overscroll-y-contain">
         {activeTab === 'plan' && (
-          <PlanTab userId={userId} plans={plans} setPlans={setPlans} equipment={equipment} records={records} />
+          <PlanTab
+            userId={userId} plans={planList} setPlans={setPlans} equipment={equipment} records={recordList}
+            library={library} usage={usage} exerciseActions={exerciseActions}
+          />
         )}
         {activeTab === 'record' && (
           <WorkoutTab
-            plans={plans}
-            records={records}
+            plans={planList}
+            records={recordList}
             equipmentOptionsMap={equipmentOptionsMap}
             session={currentSession}
             setSession={setCurrentSession}
@@ -471,7 +590,10 @@ export default function FitTrack({ userId }: { userId: string }) {
             onGoToPlans={() => requestTab('plan')}
           />
         )}
-        {activeTab === 'history' && <RecordsTab records={records} />}
+        {activeTab === 'history' && <RecordsTab records={recordList} />}
+        {activeTab === 'exercises' && (
+          <ExercisesTab library={library} usage={usage} records={recordList} plans={planList} equipment={equipment} actions={exerciseActions} />
+        )}
         {activeTab === 'profile' && (
           <TabProfile
             userId={userId}
@@ -481,8 +603,8 @@ export default function FitTrack({ userId }: { userId: string }) {
             setProfile={setProfile}
             bodyLogs={bodyLogs}
             setBodyLogs={setBodyLogs}
-            plans={plans}
-            records={records}
+            plans={planList}
+            records={recordList}
           />
         )}
       </main>

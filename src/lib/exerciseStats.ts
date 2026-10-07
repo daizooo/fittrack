@@ -1,10 +1,11 @@
 import type { ExerciseType, SessionExercise, SetData, WorkoutRecord } from '../types'
 
 // 記録・分析は種目単位で行う（プランは自由に作り替えられるため、集計の軸にしない）。
-// 種目は名前で同一視する（別プランに同じ名前の種目があれば同じ種目として扱う。
+// 種目は exerciseId で同一視する（別プランに同じ種目があれば同じ種目として扱う。
 // セッション開始時に前回値を引き継ぐ buildSession と同じ規則）。
+// ID の無い旧データは名前で同一視する。
 
-export const exerciseKey = (name: string) => name.trim()
+export const exerciseKey = (ex: { exerciseId?: string; name: string }) => ex.exerciseId ?? ex.name.trim()
 
 export const amountUnit = (type: ExerciseType) => (type === 'normal' ? '回' : '秒')
 
@@ -62,12 +63,11 @@ const toSession = (record: WorkoutRecord, ex: SessionExercise): ExerciseSession 
 }
 
 /** 種目ごとの実施履歴（新しい順）。自己ベスト更新フラグつき */
-export const exerciseHistory = (records: WorkoutRecord[], name: string): ExerciseSession[] => {
-  const key = exerciseKey(name)
+export const exerciseHistory = (records: WorkoutRecord[], key: string): ExerciseSession[] => {
   const sessions = records
     .filter(r => r.type === 'workout')
     .flatMap(r => r.exercises
-      .filter(ex => exerciseKey(ex.name) === key)
+      .filter(ex => exerciseKey(ex) === key)
       .map(ex => toSession(r, ex))
       .filter((s): s is ExerciseSession => s !== null))
     .sort((a, b) => a.fullDate.localeCompare(b.fullDate))
@@ -87,6 +87,7 @@ export const exerciseHistory = (records: WorkoutRecord[], name: string): Exercis
 
 /** 期間内の種目別サマリー */
 export interface ExerciseSummary {
+  key: string                    // exerciseKey（種目ID。旧データは名前）
   name: string
   type: ExerciseType
   exercise: SessionExercise      // 最新の実施内容（負荷ラベルの参照用）
@@ -105,11 +106,11 @@ export const summarizeExercises = (records: WorkoutRecord[]): ExerciseSummary[] 
     r.exercises.forEach(ex => {
       const s = toSession(r, ex)
       if (!s) return
-      const key = exerciseKey(ex.name)
+      const key = exerciseKey(ex)
       const cur = map.get(key)
       if (!cur) {
         map.set(key, {
-          name: key, type: ex.type, exercise: ex, sessions: 1,
+          key, name: ex.name.trim(), type: ex.type, exercise: ex, sessions: 1,
           completedSets: s.completedSets.length, amount: s.amount, bestAmount: s.bestAmount,
           maxWeight: s.maxWeight, lastDate: r.fullDate
         })

@@ -12,7 +12,9 @@ import { generateEquipmentOptions } from '../lib/equipmentUtils'
 import { useUnsavedGuard } from '../lib/unsavedGuard'
 import { daysAgo, formatDaysAgo } from '../lib/dates'
 import { DiscardDialog, NumberField, Stepper, scrollAppToTop } from './ui'
-import type { CircuitStation, EquipmentItem, Exercise, Stretch, StretchPhase, WorkoutPlan, WorkoutRecord } from '../types'
+import { ExercisePicker, type ExerciseActions, type ExerciseUsage } from './ExercisePicker'
+import { exerciseFromDef } from '../lib/exerciseLibrary'
+import type { CircuitStation, EquipmentItem, Exercise, ExerciseDef, Stretch, StretchPhase, WorkoutPlan, WorkoutRecord } from '../types'
 
 // ─── Stretch presets ─────────────────────────────────────────────────────────
 
@@ -184,10 +186,19 @@ const EquipmentFields = ({ ex, equipment, onChange }: {
 
 // ─── Plan editor ─────────────────────────────────────────────────────────────
 
-const PlanEditor = ({ initial, isNew, equipment, existingNames, onCancel, onSave }: {
+type PickerTarget =
+  | { kind: 'add' }
+  | { kind: 'circuit-add'; circuitId: string }
+  | { kind: 'replace'; exId: string }
+  | { kind: 'replace-station'; circuitId: string; stId: string }
+
+const PlanEditor = ({ initial, isNew, equipment, library, usage, exerciseActions, existingNames, onCancel, onSave }: {
   initial: WorkoutPlan
   isNew: boolean
   equipment: EquipmentItem[]
+  library: ExerciseDef[]
+  usage: ExerciseUsage
+  exerciseActions: ExerciseActions
   existingNames: string[]
   onCancel: () => void
   onSave: (plan: WorkoutPlan) => Promise<string | null>
@@ -196,6 +207,7 @@ const PlanEditor = ({ initial, isNew, equipment, existingNames, onCancel, onSave
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [confirmCancel, setConfirmCancel] = useState(false)
+  const [picker, setPicker] = useState<PickerTarget | null>(null)
   const initialJson = useRef(JSON.stringify(initial))
   const dirty = useMemo(() => JSON.stringify(draft) !== initialJson.current, [draft])
   // 変更があるままタブを移動しようとしたら FitTrack 側で確認ダイアログを出す
@@ -207,19 +219,48 @@ const PlanEditor = ({ initial, isNew, equipment, existingNames, onCancel, onSave
   const updateExercise = (exId: string, field: keyof Exercise, value: string | number) =>
     patchExercise(exId, { [field]: value } as Partial<Exercise>)
 
-  const addExercise = () => setDraft(prev => ({
+  const loadEquipmentIds = equipment.filter(e => e.category === 'load').map(e => e.id)
+
+  // 種目は一覧（種目ピッカー）から選んで追加する。自由入力はしない
+  const addExercises = (defs: ExerciseDef[]) => setDraft(prev => ({
     ...prev,
-    exercises: [...prev.exercises, {
-      id: newId('ex'), name: '', type: 'normal', targetSets: 3,
-      defaultReps: 10, defaultWeight: 0, interval: 60, equipmentType: 'bodyweight'
-    }]
+    exercises: [...prev.exercises, ...defs.map(d => exerciseFromDef(d, loadEquipmentIds, newId))]
   }))
+  const replaceExercise = (exId: string, def: ExerciseDef) => {
+    const fresh = exerciseFromDef(def, loadEquipmentIds, newId)
+    setDraft(prev => ({
+      ...prev,
+      exercises: prev.exercises.map(e => {
+        if (e.id !== exId) return e
+        // セット数・休憩は残し、種目に依存する項目（タイプ・機材・回数/秒数）は新しい種目の初期値にする
+        const { type, equipmentType, defaultReps, tabataWork, tabataRest, tabataCycles } = fresh
+        return { ...e, exerciseId: def.id, name: def.name, type, equipmentType, defaultWeight: 0, defaultReps, tabataWork, tabataRest, tabataCycles }
+      })
+    }))
+  }
+  const stationFromDef = (def: ExerciseDef): CircuitStation => createStation({
+    exerciseId: def.id, name: def.name,
+    equipmentType: loadEquipmentIds.includes(def.equipmentType) ? def.equipmentType : 'bodyweight'
+  })
+  const handlePick = (defs: ExerciseDef[]) => {
+    const target = picker
+    setPicker(null)
+    if (!target || defs.length === 0) return
+    if (target.kind === 'add') addExercises(defs)
+    else if (target.kind === 'circuit-add') patchStations(target.circuitId, list => [...list, ...defs.map(stationFromDef)])
+    else if (target.kind === 'replace') replaceExercise(target.exId, defs[0])
+    else patchStation(target.circuitId, target.stId, stationFromDef(defs[0]))
+  }
 
   const moveExercise = (idx: number, dir: -1 | 1) => setDraft(prev => ({ ...prev, exercises: moveItem(prev.exercises, idx, dir) }))
   const removeExercise = (exId: string) => setDraft(prev => ({ ...prev, exercises: prev.exercises.filter(e => e.id !== exId) }))
 
   // サーキット: 運動秒数(defaultReps)・休憩(interval)・周回数(targetSets)はサーキットが1つだけ持つ
-  const addCircuit = () => setDraft(prev => ({ ...prev, exercises: [...prev.exercises, createCircuit()] }))
+  const addCircuit = () => {
+    const c = createCircuit()
+    setDraft(prev => ({ ...prev, exercises: [...prev.exercises, c] }))
+    setPicker({ kind: 'circuit-add', circuitId: c.id })
+  }
   const patchStations = (circuitId: string, fn: (list: CircuitStation[]) => CircuitStation[]) =>
     setDraft(prev => ({
       ...prev,
@@ -264,16 +305,16 @@ const PlanEditor = ({ initial, isNew, equipment, existingNames, onCancel, onSave
     const name = draft.name.trim()
     if (!name) { setError('プラン名を入力してください'); return }
     if (existingNames.includes(name)) { setError('同じ名前のプランが既にあります'); return }
-    if (draft.exercises.some(ex => ex.type !== 'circuit' && !ex.name.trim())) { setError('種目名が空の種目があります'); return }
+    // 種目は一覧から選ぶ。ID の無い旧データ（種目テーブルの移行前など）は名前があれば保存できる
+    if (draft.exercises.some(ex => ex.type !== 'circuit' && !ex.exerciseId && !ex.name.trim())) { setError('種目が選ばれていない行があります'); return }
     if (draft.exercises.some(ex => ex.type === 'circuit' && !(ex.stations ?? []).length)) { setError('サーキットに種目がありません'); return }
-    if (draft.exercises.some(ex => (ex.stations ?? []).some(st => !st.name.trim()))) { setError('種目名が空の種目があります'); return }
+
     const cleaned: WorkoutPlan = {
       ...draft,
       name,
       exercises: draft.exercises.map(ex => ({
         ...ex,
-        name: ex.name.trim(),
-        ...(ex.stations ? { stations: ex.stations.map(st => ({ ...st, name: st.name.trim() })) } : {})
+        name: ex.name.trim()
       })),
       warmup: draft.warmup.filter(s => s.name.trim()).map(s => ({ ...s, name: s.name.trim() })),
       cooldown: draft.cooldown.filter(s => s.name.trim()).map(s => ({ ...s, name: s.name.trim() }))
@@ -363,12 +404,13 @@ const PlanEditor = ({ initial, isNew, equipment, existingNames, onCancel, onSave
                     <div key={st.id} className="bg-gray-50 rounded-xl p-2.5 border border-gray-100">
                       <div className="flex items-center gap-1.5 mb-2">
                         <span className="text-emerald-500 opacity-70 font-bold text-sm w-5">{i + 1}.</span>
-                        <input
-                          type="text" value={st.name} placeholder="種目名"
-                          aria-label="種目名"
-                          onChange={e => patchStation(ex.id, st.id, { name: e.target.value })}
-                          className="flex-1 min-w-0 bg-transparent font-bold text-gray-800 border-b border-gray-200 pb-0.5 outline-none focus:border-blue-500"
-                        />
+                        <button
+                          onClick={() => setPicker({ kind: 'replace-station', circuitId: ex.id, stId: st.id })}
+                          aria-label={`種目を変更: ${st.name}`}
+                          className="flex-1 min-w-0 text-left font-bold text-gray-800 border-b border-gray-200 pb-0.5 truncate hover:border-blue-500"
+                        >
+                          {st.name}
+                        </button>
                         <button onClick={() => patchStations(ex.id, list => moveItem(list, i, -1))} disabled={i === 0} aria-label="種目を上へ" className="p-1 text-gray-400 disabled:opacity-30"><ChevronUp size={16} /></button>
                         <button onClick={() => patchStations(ex.id, list => moveItem(list, i, 1))} disabled={i === stations.length - 1} aria-label="種目を下へ" className="p-1 text-gray-400 disabled:opacity-30"><ChevronDown size={16} /></button>
                         <button onClick={() => patchStations(ex.id, list => list.filter(x => x.id !== st.id))} aria-label="種目を削除" className="p-1 text-gray-400 hover:text-red-500"><Trash2 size={15} /></button>
@@ -378,7 +420,8 @@ const PlanEditor = ({ initial, isNew, equipment, existingNames, onCancel, onSave
                   ))}
                 </div>
 
-                <button onClick={() => patchStations(ex.id, list => [...list, createStation()])} className="w-full py-2.5 border-2 border-dashed border-emerald-200 rounded-xl text-emerald-600 text-xs font-bold flex items-center justify-center gap-1 active:scale-95">
+                {stations.length === 0 && <p className="text-xs text-gray-400 text-center mb-2">種目を追加してください</p>}
+                <button onClick={() => setPicker({ kind: 'circuit-add', circuitId: ex.id })} className="w-full py-2.5 border-2 border-dashed border-emerald-200 rounded-xl text-emerald-600 text-xs font-bold flex items-center justify-center gap-1 active:scale-95">
                   <Plus size={14} /> このサーキットに種目を追加
                 </button>
               </div>
@@ -396,13 +439,13 @@ const PlanEditor = ({ initial, isNew, equipment, existingNames, onCancel, onSave
                 <div className="flex items-center gap-1 mb-4">
                   <span className="text-blue-500 opacity-50 font-bold text-sm w-5">{idx + 1}.</span>
                   {isInSuperset && <span className="text-[9px] bg-purple-100 text-purple-600 px-1.5 py-0.5 rounded font-black tracking-wider">SS</span>}
-                  <input
-                    type="text" value={ex.name}
-                    aria-label="種目名"
-                    onChange={e => updateExercise(ex.id, 'name', e.target.value)}
-                    className="flex-1 min-w-0 font-bold text-gray-800 text-lg border-b border-gray-200 pb-1 outline-none focus:border-blue-500"
-                    placeholder="種目名"
-                  />
+                  <button
+                    onClick={() => setPicker({ kind: 'replace', exId: ex.id })}
+                    aria-label={`種目を変更: ${ex.name}`}
+                    className="flex-1 min-w-0 text-left font-bold text-gray-800 text-lg border-b border-gray-200 pb-1 truncate hover:border-blue-500"
+                  >
+                    {ex.name}
+                  </button>
                   {moveBtns}
                   <button onClick={() => removeExercise(ex.id)} aria-label="種目を削除" className="p-1 text-gray-400 hover:text-red-500 transition-colors"><Trash2 size={18} /></button>
                 </div>
@@ -481,7 +524,7 @@ const PlanEditor = ({ initial, isNew, equipment, existingNames, onCancel, onSave
         })}
 
         <div className="grid grid-cols-2 gap-3 mt-2">
-          <button onClick={addExercise} className="py-4 border-2 border-dashed border-gray-300 rounded-2xl text-gray-500 font-bold flex items-center justify-center gap-2 hover:bg-gray-100 hover:border-gray-400 transition-colors active:scale-95">
+          <button onClick={() => setPicker({ kind: 'add' })} className="py-4 border-2 border-dashed border-gray-300 rounded-2xl text-gray-500 font-bold flex items-center justify-center gap-2 hover:bg-gray-100 hover:border-gray-400 transition-colors active:scale-95">
             <Plus size={18} /> 種目を追加
           </button>
           <button onClick={addCircuit} className="py-4 border-2 border-dashed border-emerald-300 rounded-2xl text-emerald-600 font-bold flex items-center justify-center gap-2 hover:bg-emerald-50 transition-colors active:scale-95">
@@ -493,6 +536,14 @@ const PlanEditor = ({ initial, isNew, equipment, existingNames, onCancel, onSave
       <StretchListEditor phase="cooldown" items={draft.cooldown} onChange={cooldown => setDraft(prev => ({ ...prev, cooldown }))} />
 
       {confirmCancel && <DiscardDialog onKeep={() => setConfirmCancel(false)} onDiscard={onCancel} />}
+      {picker && (
+        <ExercisePicker
+          library={library} usage={usage} equipment={equipment} actions={exerciseActions}
+          single={picker.kind === 'replace' || picker.kind === 'replace-station'}
+          title={picker.kind === 'replace' || picker.kind === 'replace-station' ? '種目を変更' : '種目を追加'}
+          onClose={() => setPicker(null)} onConfirm={handlePick}
+        />
+      )}
     </div>
   )
 }
@@ -578,12 +629,15 @@ export const ExerciseList = ({ exercises }: { exercises: Exercise[] }) => (
 
 type View = { mode: 'list' } | { mode: 'detail'; id: string } | { mode: 'edit'; plan: WorkoutPlan; isNew: boolean }
 
-export default function PlanTab({ userId, plans, setPlans, equipment, records }: {
+export default function PlanTab({ userId, plans, setPlans, equipment, records, library, usage, exerciseActions }: {
   userId: string
   plans: WorkoutPlan[]
   setPlans: React.Dispatch<React.SetStateAction<WorkoutPlan[]>>
   equipment: EquipmentItem[]
   records: WorkoutRecord[]
+  library: ExerciseDef[]
+  usage: ExerciseUsage
+  exerciseActions: ExerciseActions
 }) {
   const [view, setView] = useState<View>({ mode: 'list' })
   useEffect(() => { scrollAppToTop() }, [view.mode, view.mode === 'detail' ? view.id : null])
@@ -631,6 +685,9 @@ export default function PlanTab({ userId, plans, setPlans, equipment, records }:
         initial={view.plan}
         isNew={view.isNew}
         equipment={equipment}
+        library={library}
+        usage={usage}
+        exerciseActions={exerciseActions}
         existingNames={plans.filter(p => p.id !== view.plan.id).map(p => p.name)}
         onCancel={() => setView(view.isNew ? { mode: 'list' } : { mode: 'detail', id: view.plan.id })}
         onSave={savePlan}

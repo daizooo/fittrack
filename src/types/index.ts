@@ -2,6 +2,27 @@ export type ExerciseType = 'normal' | 'duration' | 'tabata' | 'circuit'
 export type RecordType = 'workout' | 'rest'
 export type TimerType = 'work' | 'rest' | 'tabata_work' | 'tabata_rest'
 
+/** 種目の主な部位 */
+export type MuscleGroup = 'chest' | 'back' | 'shoulders' | 'arms' | 'core' | 'legs' | 'glutes' | 'cardio' | 'other'
+/** 種目の入力タイプ: 回数 / 秒数 / HIIT（ラウンド） */
+export type ExerciseKind = 'reps' | 'duration' | 'hiit'
+
+/**
+ * 種目マスタ。プラン・記録は exerciseId でこれを参照する（名前の表記ゆれで履歴が分かれない）。
+ * 過去のトレーニング記録は持たず、records から exerciseId で集計する。
+ * 標準の種目は id が 'sys:' で始まりアプリ内の固定カタログ、自作の種目は DB(exercises) の uuid。
+ */
+export interface ExerciseDef {
+  id: string
+  name: string
+  muscle: MuscleGroup
+  kind: ExerciseKind
+  equipmentType: string           // 標準の負荷器具（EquipmentItem.id）。プランに入れるときの初期値
+  note: string
+  builtin: boolean
+  aliases?: string[]              // 標準種目の別名（検索・旧データの名前照合用）
+}
+
 export interface EquipmentOption {
   label: string
   weight: number
@@ -25,6 +46,7 @@ export interface EquipmentItem {
 
 export interface Exercise {
   id: string
+  exerciseId?: string             // 種目マスタ(ExerciseDef.id)への参照。name は表示用のスナップショット
   name: string
   type: ExerciseType
   targetSets: number
@@ -46,6 +68,7 @@ export interface Exercise {
 /** サーキットの1種目。セット数・回数・休憩は持たず、機材と負荷だけを持つ */
 export interface CircuitStation {
   id: string
+  exerciseId?: string
   name: string
   equipmentType: string
   defaultWeight: number
