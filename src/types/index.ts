@@ -148,6 +148,11 @@ export interface TimerState {
   tabataCycles: number
   currentCycle: number
   stretch: { phase: StretchPhase; idx: number; chain: boolean } | null
+  /** 一時停止中。残り時間は leftMs に保持し、再開で endTime を引き直す */
+  paused: boolean
+  leftMs: number
+  /** 休憩が終わったら自動で始める運動（サーキットで次の種目へ進むときに使う） */
+  then: { exIdx: number; setIdx: number } | null
 }
 
 export interface SessionData {

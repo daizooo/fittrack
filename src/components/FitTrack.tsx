@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react'
-import { Dumbbell, CalendarDays, BarChart3, BookOpen, LogOut, User, Play, Timer, X, AlertTriangle } from 'lucide-react'
+import { Dumbbell, CalendarDays, BarChart3, BookOpen, LogOut, User, Play, Pause, Timer, X, AlertTriangle } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { generateEquipmentOptions, DEFAULT_LOAD_EQUIPMENT } from '../lib/equipmentUtils'
 import { getAudioCtx, playBeep } from '../lib/audio'
@@ -28,7 +28,8 @@ import type {
 const defaultTimerState: TimerState = {
   isActive: false, type: null, endTime: 0, remaining: 0,
   exIdx: null, setIdx: null, interval: 0,
-  tabataWork: 0, tabataRest: 0, tabataCycles: 0, currentCycle: 0, stretch: null
+  tabataWork: 0, tabataRest: 0, tabataCycles: 0, currentCycle: 0, stretch: null,
+  paused: false, leftMs: 0, then: null
 }
 
 type Tab = 'plan' | 'record' | 'history' | 'exercises' | 'profile'
@@ -420,6 +421,31 @@ export default function FitTrack({ userId }: { userId: string }) {
 
   const stopTimer = useCallback(() => setActiveTimer(defaultTimerState), [])
 
+  const pauseTimer = useCallback(() => {
+    setActiveTimer(prev => (!prev.isActive || prev.paused ? prev : { ...prev, paused: true, leftMs: Math.max(0, prev.endTime - Date.now()) }))
+  }, [])
+
+  const resumeTimer = useCallback(() => {
+    setActiveTimer(prev => (!prev.isActive || !prev.paused ? prev : { ...prev, paused: false, endTime: Date.now() + prev.leftMs }))
+  }, [])
+
+  /** サーキットで、いま終えた運動の次にやる運動（周回順: 1周目の全種目 → 2周目…）。無ければ null */
+  const nextCircuitStation = (exIdx: number, setIdx: number) => {
+    const exercises = sessionRef.current?.exercises
+    const group = exercises?.[exIdx]?.supersetGroup
+    if (!exercises || !exercises[exIdx].circuit || !group) return null
+    const stations = exercises.flatMap((e, i) => (e.circuit && e.supersetGroup === group ? [i] : []))
+    const rounds = Math.max(...stations.map(i => exercises[i].sets.length))
+    for (let r = setIdx; r < rounds; r++) {
+      for (const i of stations) {
+        if (r === setIdx && i <= exIdx) continue
+        const s = exercises[i].sets[r]
+        if (s && !s.completed) return { exIdx: i, setIdx: r }
+      }
+    }
+    return null
+  }
+
   const finishSetAndRest = (timerState: TimerState) => {
     setCurrentSession(prev => {
       if (!prev || timerState.exIdx === null || timerState.setIdx === null) return prev
@@ -430,11 +456,25 @@ export default function FitTrack({ userId }: { userId: string }) {
         })
       }
     })
+    const next = timerState.exIdx !== null && timerState.setIdx !== null ? nextCircuitStation(timerState.exIdx, timerState.setIdx) : null
     if (timerState.interval > 0) {
-      setTimeout(() => { startTimer('rest', timerState.interval) }, 1000)
+      setTimeout(() => {
+        getAudioCtx()
+        const end = Date.now() + timerState.interval * 1000
+        setActiveTimer({ ...defaultTimerState, isActive: true, type: 'rest', endTime: end, remaining: timerState.interval, then: next })
+      }, 1000)
+    } else if (next) {
+      setTimeout(() => startNextStation(next), 1000)
     } else {
       setActiveTimer(defaultTimerState)
     }
+  }
+
+  const startNextStation = (next: NonNullable<TimerState['then']>) => {
+    const ex = sessionRef.current?.exercises[next.exIdx]
+    const set = ex?.sets[next.setIdx]
+    if (!ex || !set || set.completed) { setActiveTimer(defaultTimerState); return }
+    startTimer('work', set.reps, next.exIdx, next.setIdx, ex.interval)
   }
 
   const finishStretch = (stretch: NonNullable<TimerState['stretch']>) => {
@@ -451,7 +491,7 @@ export default function FitTrack({ userId }: { userId: string }) {
 
   useEffect(() => {
     let timerId: ReturnType<typeof setInterval>
-    if (activeTimer.isActive) {
+    if (activeTimer.isActive && !activeTimer.paused) {
       timerId = setInterval(() => {
         const now = Date.now()
         const timerState = activeTimerRef.current
@@ -477,6 +517,7 @@ export default function FitTrack({ userId }: { userId: string }) {
             setActiveTimer(defaultTimerState)
             if (timerState.stretch) finishStretch(timerState.stretch)
             else if (timerState.type === 'work') finishSetAndRest(timerState)
+            else if (timerState.type === 'rest' && timerState.then) startNextStation(timerState.then)
           }
         } else {
           if (timeLeft !== timerState.remaining) {
@@ -487,11 +528,11 @@ export default function FitTrack({ userId }: { userId: string }) {
       }, 100)
     }
     return () => clearInterval(timerId)
-  }, [activeTimer.isActive, activeTimer.endTime]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [activeTimer.isActive, activeTimer.paused, activeTimer.endTime]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const timerControls: TimerControls = useMemo(
-    () => ({ activeTimer, startTimer, startTabataTimer, startStretchTimer, stopTimer }),
-    [activeTimer, startTimer, startTabataTimer, startStretchTimer, stopTimer]
+    () => ({ activeTimer, startTimer, startTabataTimer, startStretchTimer, stopTimer, pauseTimer, resumeTimer }),
+    [activeTimer, startTimer, startTabataTimer, startStretchTimer, stopTimer, pauseTimer, resumeTimer]
   )
 
   // ── Session save / rest ─────────────────────────────────────────────────────
@@ -647,12 +688,12 @@ export default function FitTrack({ userId }: { userId: string }) {
           style={{ bottom: 'calc(5rem + env(safe-area-inset-bottom, 0px) + 0.5rem)' }}
         >
           {activeTimer.type === 'work' || activeTimer.type === 'tabata_work'
-            ? <Play size={20} className={`${activeTimer.remaining <= 5 ? 'animate-bounce' : 'animate-pulse'}`} fill="currentColor" />
-            : <Timer size={20} className={`text-blue-400 ${activeTimer.remaining <= 5 ? 'animate-bounce text-red-400' : 'animate-pulse'}`} />}
+            ? <Play size={20} className={activeTimer.paused ? '' : activeTimer.remaining <= 5 ? 'animate-bounce' : 'animate-pulse'} fill="currentColor" />
+            : <Timer size={20} className={`text-blue-400 ${activeTimer.paused ? '' : activeTimer.remaining <= 5 ? 'animate-bounce text-red-400' : 'animate-pulse'}`} />}
           <span className={`font-mono text-3xl font-bold w-16 text-center tracking-tighter ${(activeTimer.type === 'rest' || activeTimer.type === 'tabata_rest') && activeTimer.remaining <= 5 ? 'text-red-400' : ''}`}>{activeTimer.remaining}</span>
           <div className="flex flex-col items-center justify-center min-w-[3rem]">
             <span className="text-[10px] font-black tracking-widest whitespace-nowrap opacity-80">
-              {activeTimer.stretch ? 'STRETCH' : activeTimer.type === 'work' || activeTimer.type === 'tabata_work' ? 'WORK' : 'REST'}
+              {activeTimer.paused ? 'PAUSE' : activeTimer.stretch ? 'STRETCH' : activeTimer.type === 'work' || activeTimer.type === 'tabata_work' ? 'WORK' : 'REST'}
             </span>
             {(activeTimer.type === 'tabata_work' || activeTimer.type === 'tabata_rest') && (
               <span className="text-[9px] font-bold mt-0.5 bg-white/20 px-1.5 py-0.5 rounded text-white tracking-widest">
@@ -660,6 +701,13 @@ export default function FitTrack({ userId }: { userId: string }) {
               </span>
             )}
           </div>
+          <button
+            onClick={activeTimer.paused ? resumeTimer : pauseTimer}
+            aria-label={activeTimer.paused ? 'タイマーを再開' : 'タイマーを一時停止'}
+            className="p-1.5 rounded-full hover:bg-black/20 active:scale-95 transition-transform"
+          >
+            {activeTimer.paused ? <Play size={16} fill="currentColor" /> : <Pause size={16} fill="currentColor" />}
+          </button>
           <button onClick={stopTimer} aria-label="タイマーを止める" className="p-1.5 rounded-full hover:bg-black/20 active:scale-95 transition-transform">
             <X size={16} />
           </button>

@@ -15,6 +15,8 @@ export interface TimerControls {
   startTabataTimer: (exIdx: number, setIdx: number, work: number, rest: number, cycles: number, interval: number) => void
   startStretchTimer: (phase: StretchPhase, idx: number, chain: boolean) => void
   stopTimer: () => void
+  pauseTimer: () => void
+  resumeTimer: () => void
 }
 
 interface WorkoutTabProps {
