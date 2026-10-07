@@ -1,6 +1,6 @@
-import React, { useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import {
-  Play, Moon, CheckCircle, ChevronLeft, Minus, Plus, Timer, Sunrise, Sunset, Clock, Star, PlayCircle, Repeat
+  Play, Moon, CheckCircle, ChevronLeft, Minus, Plus, Timer, Sunrise, Sunset, Clock, Star, PlayCircle, Repeat, ChevronDown, Pause, X
 } from 'lucide-react'
 import { buildSession, estimatePlanMinutes, lastPerformedMap, recommendPlanId, segmentExercises } from '../lib/plans'
 import { daysAgo, daysOfWeek, formatDaysAgo, isSameDay } from '../lib/dates'
@@ -15,6 +15,8 @@ export interface TimerControls {
   startTabataTimer: (exIdx: number, setIdx: number, work: number, rest: number, cycles: number, interval: number) => void
   startStretchTimer: (phase: StretchPhase, idx: number, chain: boolean) => void
   stopTimer: () => void
+  pauseTimer: () => void
+  resumeTimer: () => void
 }
 
 interface WorkoutTabProps {
@@ -72,11 +74,14 @@ const StretchSection = ({ phase, session, setSession, timer }: {
       </div>
       <div className="px-2 pb-2 space-y-1.5">
         {items.map((s, idx) => (
-          <div key={s.id} className={`flex items-center gap-2 p-2 rounded-xl ${s.completed ? 'bg-green-50' : 'bg-white'} ${running === idx ? 'ring-2 ring-orange-400' : ''}`}>
+          <TimedRow key={s.id} state={running === idx ? 'running' : null} dim={false} idleBg={s.completed ? 'bg-green-50' : 'bg-white'} className="flex items-center gap-2 p-2 rounded-xl transition-all">
             <div className="flex-1 min-w-0">
-              <div className={`text-sm font-bold truncate ${s.completed ? 'text-gray-400 line-through' : 'text-gray-800'}`}>{s.name}</div>
-              <div className="text-[10px] text-gray-400 font-bold flex items-center gap-0.5"><Timer size={10} />{s.seconds}秒</div>
+              <div className={`font-bold truncate ${running === idx ? 'text-lg font-black text-white' : s.completed ? 'text-sm text-gray-400 line-through' : 'text-sm text-gray-800'}`}>{s.name}</div>
+              {running === idx
+                ? <RowTimerDisplay timer={timer} />
+                : <div className="text-[10px] text-gray-400 font-bold flex items-center gap-0.5"><Timer size={10} />{s.seconds}秒</div>}
             </div>
+            {running === idx ? <RowRunButton timer={timer} name={s.name} /> : (
             <button
               onClick={() => timer.startStretchTimer(phase, idx, false)}
               disabled={s.completed}
@@ -85,6 +90,7 @@ const StretchSection = ({ phase, session, setSession, timer }: {
             >
               <Play size={16} fill="currentColor" className="ml-0.5" />
             </button>
+            )}
             <button
               onClick={() => toggle(idx)}
               aria-label={`${s.name}を完了`}
@@ -92,10 +98,93 @@ const StretchSection = ({ phase, session, setSession, timer }: {
             >
               <CheckCircle size={20} />
             </button>
-          </div>
+          </TimedRow>
         ))}
       </div>
     </div>
+  )
+}
+
+// ─── 行ごとのタイマー表示 ────────────────────────────────────────────────────
+
+type RowTimerState = 'running' | 'resting' | 'next' | null
+
+/**
+ * この行（種目 exIdx の setIdx 番目）のタイマーの状態。
+ * running = 運動中、resting = この行を終えたあとの休憩、next = 休憩のあとに始まる次の種目
+ */
+const rowTimerState = (t: TimerState, exIdx: number, setIdx: number): RowTimerState => {
+  if (!t.isActive || t.stretch) return null
+  if (t.exIdx === exIdx && t.setIdx === setIdx) return t.type === 'rest' ? 'resting' : 'running'
+  if (t.type === 'rest' && t.then?.exIdx === exIdx && t.then.setIdx === setIdx) return 'next'
+  return null
+}
+
+/** 運動中はオレンジ、休憩中は青のベタ塗り＋白文字で、ほかの行より明らかに目立たせる */
+const ROW_ACTIVE = {
+  running: 'bg-orange-500 text-white shadow-lg shadow-orange-500/40 ring-2 ring-orange-300',
+  resting: 'bg-blue-600 text-white shadow-lg shadow-blue-600/40 ring-2 ring-blue-300'
+}
+
+/**
+ * タイマーが動いている行を強調する。dim=true の行（同じサーキットのほかの行）は薄くして、動いている行を際立たせる。
+ * サーキットで次の種目へ進んだときは、その行が画面内に入るようスクロールする。
+ */
+const TimedRow = ({ state, dim, idleBg, className, children }: { state: RowTimerState; dim: boolean; idleBg: string; className: string; children: React.ReactNode }) => {
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (state === 'running') ref.current?.scrollIntoView?.({ block: 'center', behavior: 'smooth' })
+  }, [state])
+  const active = state === 'running' || state === 'resting'
+  return <div ref={ref} className={`${className} ${active ? ROW_ACTIVE[state] : idleBg} ${dim && !state ? 'opacity-40' : ''}`}>{children}</div>
+}
+
+/** 動いている行の中に出す残り時間（白文字・特大） */
+const RowTimerDisplay = ({ timer, state = 'running' }: { timer: TimerControls; state?: 'running' | 'resting' }) => {
+  const t = timer.activeTimer
+  const label = t.paused ? '一時停止中' : state === 'resting' || t.type === 'tabata_rest' ? '休憩' : '実施中'
+  const tabata = t.type === 'tabata_work' || t.type === 'tabata_rest'
+  return (
+    <div className="flex-1 min-w-0" role="timer" aria-label="残り時間">
+      <div className={`text-[11px] font-black tracking-widest truncate ${state === 'resting' ? 'text-blue-100' : 'text-orange-100'}`}>
+        {label}{tabata && <span className="ml-1.5">RND {t.currentCycle}/{t.tabataCycles}</span>}
+      </div>
+      <div className="flex items-baseline gap-1">
+        <span className="font-mono text-5xl font-black leading-none tabular-nums">{t.remaining}</span>
+        <span className={`text-sm font-bold ${state === 'resting' ? 'text-blue-100' : 'text-orange-100'}`}>秒</span>
+      </div>
+    </div>
+  )
+}
+
+/** 休憩中に、次に始まる行へ付ける目印 */
+const NextBadge = ({ timer }: { timer: TimerControls }) => (
+  <span className="flex-shrink-0 text-[10px] font-black bg-blue-600 text-white px-1.5 py-0.5 rounded tracking-wider">
+    {timer.activeTimer.paused ? 'NEXT ・ 一時停止中' : `NEXT ・ 休憩 ${timer.activeTimer.remaining}`}
+  </span>
+)
+
+/** 実行中の行のボタン。再生ボタンは一時停止／再開に変わり、止めるボタンも並ぶ（下のタイマー表示は出さないため） */
+const RowRunButton = ({ timer, name, tone = 'running' }: { timer: TimerControls; name: string; tone?: 'running' | 'resting' | 'next' }) => {
+  const paused = timer.activeTimer.paused
+  const next = tone === 'next' // 休憩中（次の種目の行）は、オレンジ地ではないので色を変える
+  return (
+    <>
+      <button
+        onClick={paused ? timer.resumeTimer : timer.pauseTimer}
+        aria-label={`${name}のタイマーを${paused ? '再開' : '一時停止'}`}
+        className={`w-11 h-11 flex-shrink-0 flex justify-center items-center rounded-xl shadow-sm active:scale-95 transition-all ${next ? 'bg-blue-600 text-white' : tone === 'resting' ? 'bg-white text-blue-600' : 'bg-white text-orange-600'}`}
+      >
+        {paused ? <Play size={20} fill="currentColor" className="ml-0.5" /> : <Pause size={20} fill="currentColor" />}
+      </button>
+      <button
+        onClick={timer.stopTimer}
+        aria-label={`${name}のタイマーを止める`}
+        className={`w-9 h-9 flex-shrink-0 flex justify-center items-center rounded-xl active:scale-95 transition-all ${next ? 'bg-gray-200 text-gray-600' : tone === 'resting' ? 'bg-blue-800/60 text-white' : 'bg-orange-700/60 text-white'}`}
+      >
+        <X size={16} />
+      </button>
+    </>
   )
 }
 
@@ -116,6 +205,17 @@ const CircuitSessionCard = ({ items, start, timer, onSetUpdate, onToggle, onRoun
   const rounds = items[0].sets.length
   const rest = items[0].interval
   const doneCount = items.reduce((n, ex) => n + ex.sets.filter(s => s.completed).length, 0)
+  // 同じ種目が周回数ぶん並んで長くなるので、いま取り組む周だけを開き、ほかの周は1行に畳む（タップで開閉）
+  const [toggled, setToggled] = useState<Record<number, boolean>>({})
+  const currentRound = Array.from({ length: rounds }, (_, r) => r).find(r => items.some(ex => !ex.sets[r].completed)) ?? -1
+  // タイマーが動いている周（次の種目を待つ周も）は、閉じていても開く。タイマーは行の中にだけ出すため
+  const hasTimerRow = (r: number) => items.some((_, i) => rowTimerState(timer.activeTimer, start + i, r) !== null)
+  const isOpen = (r: number) => hasTimerRow(r) || (r in toggled ? toggled[r] : r === currentRound)
+  // このサーキットでタイマーが動いている（運動中、または次の種目を待つ休憩中）なら、ほかの行を薄くする
+  const inCircuit = (i: number | null | undefined) => i != null && i >= start && i < start + items.length
+  const t = timer.activeTimer
+  const circuitActive = t.isActive && !t.stretch && (inCircuit(t.exIdx) || (t.type === 'rest' && inCircuit(t.then?.exIdx)))
+  useEffect(() => { setToggled({}) }, [currentRound]) // 次の周へ進んだら、手動の開閉は忘れて「現在の周だけ開く」に戻す
   return (
     <div className="bg-white rounded-2xl shadow-sm overflow-hidden border-2 border-emerald-200 mb-6">
       <div className="p-3 bg-emerald-50 border-b border-emerald-100 flex justify-between items-center flex-wrap gap-2">
@@ -133,23 +233,44 @@ const CircuitSessionCard = ({ items, start, timer, onSetUpdate, onToggle, onRoun
         </div>
       </div>
       <div className="p-2 space-y-3">
-        {Array.from({ length: rounds }, (_, r) => (
+        {Array.from({ length: rounds }, (_, r) => {
+          const roundDone = items.filter(ex => ex.sets[r].completed).length
+          const allDone = roundDone === items.length
+          const open = isOpen(r)
+          return (
           <div key={r}>
-            <div className="text-[10px] font-black text-emerald-600 tracking-widest px-1 mb-1">{r + 1}周目</div>
-            <div className="space-y-1.5">
+            <button
+              onClick={() => setToggled(prev => ({ ...prev, [r]: !open }))}
+              aria-expanded={open} aria-label={`${r + 1}周目を${open ? '閉じる' : '開く'}`}
+              className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-left active:scale-[0.99] transition-transform ${open ? 'mb-1' : allDone ? 'bg-green-50' : 'bg-gray-50'}`}
+            >
+              <span className={`text-[10px] font-black tracking-widest ${allDone ? 'text-green-600' : 'text-emerald-600'}`}>{r + 1}周目</span>
+              {allDone && <CheckCircle size={14} className="text-green-500" />}
+              <span className="text-[10px] font-bold text-gray-400">{roundDone}/{items.length}</span>
+              {!open && <span className="text-[10px] text-gray-400 truncate flex-1 min-w-0">{items.map(ex => ex.name).join(' / ')}</span>}
+              <ChevronDown size={14} className={`ml-auto flex-shrink-0 text-gray-400 transition-transform ${open ? 'rotate-180' : ''}`} />
+            </button>
+            {open && <div className="space-y-1.5">
               {items.map((ex, i) => {
                 const set = ex.sets[r]
                 const exIdx = start + i
                 const hasWeight = ex.options.length > 1
+                const state = rowTimerState(timer.activeTimer, exIdx, r)
+                const active = state === 'running' || state === 'resting'
                 return (
-                  <div key={ex.id} className={`flex items-center gap-2 p-2 rounded-xl ${set.completed ? 'bg-green-50' : 'bg-gray-50'}`}>
+                  <TimedRow key={ex.id} state={state} dim={circuitActive} idleBg={set.completed ? 'bg-green-50' : 'bg-gray-50'} className="flex items-center gap-2 p-2 rounded-xl transition-all">
                     <div className="flex-1 min-w-0">
-                      <div className={`text-sm font-bold truncate ${set.completed ? 'text-gray-400 line-through' : 'text-gray-800'}`}>{ex.name}</div>
+                      <div className="flex items-center gap-2 min-w-0">
+                        <div className={`font-bold truncate ${active ? 'text-lg font-black text-white' : set.completed ? 'text-sm text-gray-400 line-through' : 'text-sm text-gray-800'}`}>{ex.name}</div>
+                        {state === 'next' && <NextBadge timer={timer} />}
+                      </div>
+                      {active ? <RowTimerDisplay timer={timer} state={state} /> : (
                       <div className="flex items-center gap-1 text-[10px] text-gray-500 font-bold">
                         <NumberField value={set.reps} min={1} max={999} aria-label={`${ex.name} ${r + 1}周目の運動秒数`} onChange={v => onSetUpdate(exIdx, r, 'reps', v)} className="w-9 bg-white border border-gray-200 rounded text-center outline-none p-0.5" />秒
                       </div>
+                      )}
                     </div>
-                    {hasWeight && (
+                    {hasWeight && !active && (
                       <select
                         value={set.weight} aria-label={`${ex.name} ${r + 1}周目の負荷`}
                         onChange={e => onSetUpdate(exIdx, r, 'weight', Number(e.target.value))}
@@ -158,6 +279,7 @@ const CircuitSessionCard = ({ items, start, timer, onSetUpdate, onToggle, onRoun
                         {ex.options.map((o, oi) => <option key={oi} value={o.weight}>{o.label}</option>)}
                       </select>
                     )}
+                    {state ? <RowRunButton timer={timer} name={`${ex.name} ${r + 1}周目`} tone={state} /> : (
                     <button
                       onClick={() => timer.startTimer('work', set.reps, exIdx, r, ex.interval)}
                       disabled={set.completed}
@@ -166,6 +288,7 @@ const CircuitSessionCard = ({ items, start, timer, onSetUpdate, onToggle, onRoun
                     >
                       <Play size={16} fill="currentColor" className="ml-0.5" />
                     </button>
+                    )}
                     <button
                       data-testid="set-check" onClick={() => onToggle(exIdx, r)}
                       aria-label={`${ex.name} ${r + 1}周目を完了`}
@@ -173,12 +296,13 @@ const CircuitSessionCard = ({ items, start, timer, onSetUpdate, onToggle, onRoun
                     >
                       <CheckCircle size={22} />
                     </button>
-                  </div>
+                  </TimedRow>
                 )
               })}
-            </div>
+            </div>}
           </div>
-        ))}
+          )
+        })}
       </div>
     </div>
   )
@@ -249,7 +373,7 @@ const ActiveSession = ({ session, setSession, timer, onSaveWorkout, onCancel }: 
         const lastGroupIdx = session.exercises.reduce((last, e, i) => (e.supersetGroup === ex.supersetGroup ? i : last), -1)
         shouldRest = exerciseIndex === lastGroupIdx
       }
-      if (shouldRest && ex.interval > 0) timer.startTimer('rest', ex.interval)
+      if (shouldRest && ex.interval > 0) timer.startTimer('rest', ex.interval, exerciseIndex, setIndex)
     }
   }
 
@@ -314,9 +438,21 @@ const ActiveSession = ({ session, setSession, timer, onSaveWorkout, onCancel }: 
                 </div>
               </div>
               <div className="p-2 space-y-2">
-                {ex.sets.map((set, setIdx) => (
-                  <div key={setIdx} className={`flex items-center gap-2 p-2 rounded-xl transition-all ${set.completed ? 'bg-green-50' : ''}`}>
-                    {ex.type === 'tabata' ? (
+                {ex.sets.map((set, setIdx) => {
+                  const state = rowTimerState(timer.activeTimer, exIdx, setIdx)
+                  const active = state === 'running' || state === 'resting'
+                  const runName = `${ex.name} ${set.setNumber}セット目`
+                  return (
+                  <TimedRow key={setIdx} state={state} dim={false} idleBg={set.completed ? 'bg-green-50' : ''} className="flex items-center gap-2 p-2 rounded-xl transition-all">
+                    {active && ex.type === 'tabata' ? (
+                      <>
+                        <div className="w-8 font-black text-orange-100 text-[10px] flex-shrink-0 text-center tracking-widest leading-tight flex flex-col justify-center">
+                          RND<br /><span className="text-sm">{set.setNumber}</span>
+                        </div>
+                        <RowTimerDisplay timer={timer} state={state} />
+                        <RowRunButton timer={timer} name={runName} tone={state} />
+                      </>
+                    ) : ex.type === 'tabata' ? (
                       <>
                         <div className="w-8 font-black text-gray-400 text-[10px] flex-shrink-0 text-center tracking-widest leading-tight flex flex-col justify-center">
                           RND<br /><span className="text-sm">{set.setNumber}</span>
@@ -346,12 +482,15 @@ const ActiveSession = ({ session, setSession, timer, onSaveWorkout, onCancel }: 
                       </>
                     ) : (
                       <>
-                        <div className="w-6 text-center font-bold text-gray-400 text-sm flex-shrink-0">{set.setNumber}</div>
+                        <div className={`w-6 text-center font-bold text-sm flex-shrink-0 ${state === 'resting' ? 'text-blue-100' : active ? 'text-orange-100' : 'text-gray-400'}`}>{set.setNumber}</div>
+                        {active ? <RowTimerDisplay timer={timer} state={state} /> : (
                         <div className="flex gap-2 flex-1 justify-end min-w-0 pr-1">
                           <EquipmentSelector label="負荷/機材" value={set.weight} options={ex.options} onChange={(v) => handleSetUpdate(exIdx, setIdx, 'weight', v)} />
                           <NumberInputStepper label={ex.type === 'duration' ? '秒数' : '回数'} value={set.reps} step={1} min={0} max={999} onChange={(v) => handleSetUpdate(exIdx, setIdx, 'reps', v)} />
                         </div>
-                        {ex.type === 'duration' && (
+                        )}
+                        {active && <RowRunButton timer={timer} name={runName} tone={state} />}
+                        {ex.type === 'duration' && !active && (
                           <button
                             onClick={() => timer.startTimer('work', set.reps, exIdx, setIdx, ex.interval)}
                             className={`w-10 h-10 flex-shrink-0 flex justify-center items-center rounded-xl transition-all shadow-sm mr-1 ${set.completed ? 'bg-gray-100 text-gray-400' : 'bg-orange-500 text-white hover:bg-orange-600 active:scale-95'}`}
@@ -365,8 +504,9 @@ const ActiveSession = ({ session, setSession, timer, onSaveWorkout, onCancel }: 
                     <button data-testid="set-check" onClick={() => toggleSetComplete(exIdx, setIdx)} className={`w-12 h-10 flex-shrink-0 flex justify-center items-center rounded-xl transition-all ${set.completed ? 'text-white bg-green-500 shadow-md shadow-green-500/30' : 'text-gray-400 bg-gray-100 active:bg-gray-200'}`}>
                       <CheckCircle size={24} />
                     </button>
-                  </div>
-                ))}
+                  </TimedRow>
+                  )
+                })}
               </div>
             </div>
             {isSessionLinkedToNext && (

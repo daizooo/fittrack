@@ -151,14 +151,14 @@ describe('ワークアウト – プラン選択とストレッチ', () => {
     await waitFor(() => expect(screen.getByText('ウォームアップ')).toBeInTheDocument())
 
     fireEvent.click(screen.getAllByText('まとめて開始')[0])
-    expect(screen.getByText('STRETCH')).toBeInTheDocument()
+    expect(screen.getByRole('timer')).toBeInTheDocument() // タイマーはストレッチの行の中に出る
 
     await act(async () => { vi.advanceTimersByTime(21_000) }) // レッグスイング（左）20秒
     await waitFor(() =>
       expect(screen.getByLabelText('レッグスイング（左）を完了').className).toContain('bg-green-500'))
 
     await act(async () => { vi.advanceTimersByTime(1_600) }) // 次のストレッチへの間
-    expect(screen.getByText('STRETCH')).toBeInTheDocument()
+    expect(screen.getByRole('timer')).toBeInTheDocument() // タイマーはストレッチの行の中に出る
     vi.useRealTimers()
   })
 })
