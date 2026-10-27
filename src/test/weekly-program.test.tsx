@@ -84,13 +84,52 @@ describe('週間トレーニングのプラン定義', () => {
     expect([...used].sort()).toEqual(EXERCISE_VIDEOS.map(v => v.id).sort())
   })
 
-  it('水曜は20秒/10秒×8ラウンド（スロールとマウンテンクライマーを交互）、金曜は30秒/30秒×3周', () => {
-    const wed = weeklyProgramPlans[2].exercises[0]
-    expect(wed).toMatchObject({ type: 'circuit', defaultReps: 20, interval: 10, targetSets: 4 })
-    expect(wed.stations).toHaveLength(2)
-    expect((wed.stations!.length) * wed.targetSets).toBe(8)
-    const fri = weeklyProgramPlans[4].exercises[0]
+  it('メインの種目のセット数・回数・休憩が、ガイド（weekly_training_guide.md）の数値と一致する', () => {
+    // [種目名, セット数, 回数または秒数, 休憩秒]。資料が範囲のものは下限（セット数の範囲は上限）
+    const main = (i: number) => weeklyProgramPlans[i].exercises.map(e => [e.name, e.type, e.targetSets, e.defaultReps, e.interval])
+    expect(main(0)).toEqual([
+      ['ブルガリアンスクワット（左）', 'normal', 3, 8, 30], // 左右各3セット・8〜10回・脚間30秒
+      ['ブルガリアンスクワット（右）', 'normal', 3, 8, 30],
+      ['チューブ・グッドモーニング', 'normal', 2, 12, 30]
+    ])
+    expect(main(1)).toEqual([
+      ['チンニング', 'normal', 3, 4, 45], // 3セット・4〜8回・45〜60秒
+      ['ニーリング・フェイスプル', 'normal', 3, 12, 30] // 3セット・12〜15回・30秒
+    ])
+    expect(main(3)).toEqual([
+      ['アシスト・ディップス', 'normal', 3, 6, 45], // 3セット・6〜10回・45〜60秒
+      ['デフィシット・プッシュアップ', 'normal', 3, 8, 45] // 2〜3セット・8〜12回・45秒
+    ])
+    expect(main(5)).toEqual([
+      ['チューブ・スクワット＆プレス', 'normal', 3, 10, 45], // 3セット・10〜12回・45秒
+      ['シーテッド・チューブローイング', 'normal', 3, 12, 30] // 3セット・12〜15回・30秒
+    ])
+  })
+
+  it('水曜は20秒全力/10秒休息×8ラウンドのタバタ1セット', () => {
+    const [wed, ...rest] = weeklyProgramPlans[2].exercises
+    expect(rest).toEqual([])
+    expect(wed).toMatchObject({ type: 'tabata', targetSets: 1, tabataWork: 20, tabataRest: 10, tabataCycles: 8 })
+    // 奇数R=スロール、偶数R=マウンテンクライマーの両方の動画が見られる
+    expect(resolveVideos(libraryPlans()[2].exercises[0].videoIds).map(v => v.title)).toEqual(['スロール（プッシュアップバー）', 'マウンテンクライマー'])
+  })
+
+  it('金曜は30秒運動/30秒休憩×3周（バックランジ→ニーレイズ）', () => {
+    const [fri, ...rest] = weeklyProgramPlans[4].exercises
+    expect(rest).toEqual([])
     expect(fri).toMatchObject({ type: 'circuit', defaultReps: 30, interval: 30, targetSets: 3 })
+    expect(fri.stations?.map(st => st.name)).toEqual(['オルタネイティング・バックランジ', 'ハンギングニーレイズ'])
+  })
+
+  it('日曜はすべて1回ずつで、左右ありは左→右の2種目（合計 60/60/60/90/90/90/90/120/120 秒）', () => {
+    const sun = weeklyProgramPlans[6].exercises
+    expect(sun.every(e => e.type === 'duration' && e.targetSets === 1 && e.interval === 0)).toBe(true)
+    expect(sun.map(e => e.defaultReps)).toEqual([60, 60, 60, 90, 90, 90, 90, 120, 120])
+    expect(sun.map(e => e.name)).toEqual([
+      'キャット＆カウ', 'スコーピオン・チェストストレッチ（左）', 'スコーピオン・チェストストレッチ（右）',
+      '90-90 ヒップストレッチ（左）', '90-90 ヒップストレッチ（右）', 'カウチストレッチ（左）', 'カウチストレッチ（右）',
+      'ダウンドッグ〜コブラ', '仰向けディープブリージング'
+    ])
   })
 
   it('missingWeeklyPlans は、すでにある週間プランを除く', () => {
@@ -123,6 +162,50 @@ describe('セッションへの動画の引き継ぎ', () => {
     // プラン側に動画の指定があれば、そちらを優先する
     const [own] = applyLibraryToPlans([{ ...custom, exercises: [{ ...custom.exercises[0], videoIds: ['01_monday_warmup_hip_circle'] }] }], buildLibrary([]))
     expect(own.exercises[0].videoIds).toEqual(['01_monday_warmup_hip_circle'])
+  })
+})
+
+describe('前回の記録の引き継ぎ（負荷だけ。セット数・回数はプランの内容）', () => {
+  const optionsMap = new Map([
+    ['assist', [{ label: 'ー', weight: 0 }, { label: '2本 (-47kg)', weight: -47 }, { label: '3本 (-70kg)', weight: -70 }]],
+    ['bodyweight', [{ label: 'ー', weight: 0 }]]
+  ])
+  const tuesday = () => libraryPlans()[1]
+  const record = (over: Partial<WorkoutRecord['exercises'][number]>): WorkoutRecord => ({
+    id: 1, date: '10/14', fullDate: '2026-10-14T00:00:00Z', day: '火', category: '療養トレ', type: 'workout', exercises: [{
+      id: 'x', exerciseId: 'sys:chin-up', name: 'チンニング', type: 'duration', targetSets: 2, defaultReps: 40, defaultWeight: 0, interval: 60,
+      equipmentType: 'assist', inherited: false, options: [],
+      sets: [{ setNumber: 1, reps: 40, weight: -70, completed: true }, { setNumber: 2, reps: 40, weight: -70, completed: true }], ...over
+    }]
+  })
+
+  it('別のプランで2セット×40秒だった種目でも、火曜のチンニングはプランどおり3セット×4回', () => {
+    const chin = buildSession(tuesday(), [record({})], optionsMap).exercises[0]
+    expect(chin.inherited).toBe(true)
+    expect(chin.targetSets).toBe(3)
+    expect(chin.sets.map(s => [s.reps, s.weight])).toEqual([[4, -70], [4, -70], [4, -70]]) // 回数はプラン、負荷は前回
+    expect(chin.sets.every(s => !s.completed)).toBe(true)
+  })
+
+  it('前回と機材が違うときは負荷を引き継がず、プランの初期値にする', () => {
+    const chin = buildSession(tuesday(), [record({ equipmentType: 'bodyweight' })], optionsMap).exercises[0]
+    expect(chin.sets.map(s => s.weight)).toEqual([-47, -47, -47])
+  })
+
+  it('前回のセットごとの負荷は順に引き継ぎ、足りない分は最後のセットの負荷', () => {
+    const sets = [{ setNumber: 1, reps: 4, weight: -24, completed: true }, { setNumber: 2, reps: 4, weight: -47, completed: true }]
+    const chin = buildSession(tuesday(), [record({ type: 'normal', sets })], optionsMap).exercises[0]
+    expect(chin.sets.map(s => s.weight)).toEqual([-24, -47, -47])
+  })
+
+  it('タバタは前回の記録があっても、プランの 20秒/10秒×8 になる', () => {
+    const wed = libraryPlans()[2]
+    const prev: WorkoutRecord = record({})
+    prev.exercises = [{ ...prev.exercises[0], exerciseId: 'sys:tabata-sprawl-mountain-climber', name: wed.exercises[0].name, type: 'tabata', equipmentType: 'bodyweight',
+      sets: [{ setNumber: 1, reps: 0, weight: 0, completed: true, tabataWork: 30, tabataRest: 15, tabataCycles: 4 }] }]
+    const [t] = buildSession(wed, [prev], optionsMap).exercises
+    expect(t.sets).toHaveLength(1)
+    expect(t.sets[0]).toMatchObject({ tabataWork: 20, tabataRest: 10, tabataCycles: 8 })
   })
 })
 

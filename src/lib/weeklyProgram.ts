@@ -9,6 +9,8 @@ type PlanSeed = Omit<WorkoutPlan, 'id' | 'sortOrder'>
  * - 種目は標準の種目（sys:）を参照する。解説動画は種目マスタ側で紐付く（exerciseVideos.ts）
  * - ストレッチは種目マスタに無いので、動画があるものは videoIds を直接持つ
  * - 回数・休憩は資料の範囲（例: 8〜10回 / 休憩45〜60秒）の下限から始める。余裕が出たら上限へ
+ *   （セット数の範囲は上限。木曜のデフィシット・プッシュアップは「2〜3セット」の3セット）
+ * - 資料が回数で書いているウォームアップ（例: 股関節サークル左右各5周）は、1回あたりの目安から秒数に直している
  * - チューブは資料どおり一番軽い赤（+9kg）から始める
  */
 
@@ -22,7 +24,7 @@ const stretch = (id: string, name: string, seconds: number, opts: { bilateral?: 
 })
 
 type ExerciseInput = Pick<Exercise, 'id' | 'exerciseId' | 'name' | 'type' | 'targetSets' | 'defaultReps' | 'interval'>
-  & Partial<Pick<Exercise, 'defaultWeight' | 'equipmentType' | 'supersetGroup'>>
+  & Partial<Pick<Exercise, 'defaultWeight' | 'equipmentType' | 'supersetGroup' | 'tabataWork' | 'tabataRest' | 'tabataCycles'>>
 
 const exercise = (e: ExerciseInput): Exercise => ({ defaultWeight: 0, equipmentType: 'bodyweight', ...e })
 
@@ -76,11 +78,8 @@ export const weeklyProgramPlans: PlanSeed[] = [
       stretch('wed-wu-wgs', 'ワールド・グレイテスト・ストレッチ', 30, { bilateral: true, video: '12_wednesday_warmup_worlds_greatest_stretch' })
     ],
     exercises: [
-      // 20秒全力 / 10秒休息 × 8ラウンド。奇数ラウンド＝スロール、偶数ラウンド＝マウンテンクライマー（交互）を、2種目×4周で表す
-      circuit('wed-tabata', 20, 10, 4, [
-        station('wed-st-1', 'sys:pushup-bar-sprawl', 'スロール（プッシュアップバー）'),
-        station('wed-st-2', 'sys:mountain-climber', 'マウンテンクライマー')
-      ])
+      // 20秒全力 / 10秒休息 × 8ラウンド（アプリのタバタ）。奇数ラウンド＝スロール、偶数ラウンド＝マウンテンクライマー
+      exercise({ id: 'wed-1', exerciseId: 'sys:tabata-sprawl-mountain-climber', name: 'タバタ（奇数R:スロール／偶数R:マウンテンクライマー）', type: 'tabata', targetSets: 1, defaultReps: 0, interval: 0, tabataWork: 20, tabataRest: 10, tabataCycles: 8 })
     ],
     cooldown: [
       stretch('wed-cd-child', 'チャイルドポーズ', 60, { video: '15_wednesday_cooldown_childs_pose' }),
@@ -95,7 +94,7 @@ export const weeklyProgramPlans: PlanSeed[] = [
     ],
     exercises: [
       exercise({ id: 'thu-1', exerciseId: 'sys:assist-dips', name: 'アシスト・ディップス', type: 'normal', targetSets: 3, defaultReps: 6, defaultWeight: ASSIST_2, interval: 45, equipmentType: 'assist' }),
-      exercise({ id: 'thu-2', exerciseId: 'sys:deficit-push-up', name: 'デフィシット・プッシュアップ', type: 'normal', targetSets: 2, defaultReps: 8, interval: 45 })
+      exercise({ id: 'thu-2', exerciseId: 'sys:deficit-push-up', name: 'デフィシット・プッシュアップ', type: 'normal', targetSets: 3, defaultReps: 8, interval: 45 })
     ],
     cooldown: [
       stretch('thu-cd-chest', '胸のストレッチ（後ろで手を組む）', 30, { video: '20_thursday_cooldown_chest_triceps_stretch' }),
@@ -138,13 +137,16 @@ export const weeklyProgramPlans: PlanSeed[] = [
     name: '日曜：フルモビリティ＆リカバリー',
     warmup: [],
     exercises: [
-      // 激しい運動は行わない。左右のあるものは 1セット目＝左、2セット目＝右
+      // 激しい運動は行わない。すべて1回ずつ（左右のあるものは左→右の2種目に分ける）
       exercise({ id: 'sun-1', exerciseId: 'sys:cat-cow', name: 'キャット＆カウ', type: 'duration', targetSets: 1, defaultReps: 60, interval: 0 }),
-      exercise({ id: 'sun-2', exerciseId: 'sys:scorpion-chest-stretch', name: 'スコーピオン・チェストストレッチ', type: 'duration', targetSets: 2, defaultReps: 60, interval: 0 }),
-      exercise({ id: 'sun-3', exerciseId: 'sys:90-90-hip-stretch', name: '90-90 ヒップストレッチ', type: 'duration', targetSets: 2, defaultReps: 90, interval: 0 }),
-      exercise({ id: 'sun-4', exerciseId: 'sys:couch-stretch', name: 'カウチストレッチ', type: 'duration', targetSets: 2, defaultReps: 90, interval: 0 }),
-      exercise({ id: 'sun-5', exerciseId: 'sys:downdog-to-cobra', name: 'ダウンドッグ〜コブラ', type: 'duration', targetSets: 1, defaultReps: 120, interval: 0 }),
-      exercise({ id: 'sun-6', exerciseId: 'sys:supine-deep-breathing', name: '仰向けディープブリージング', type: 'duration', targetSets: 1, defaultReps: 120, interval: 0 })
+      exercise({ id: 'sun-2', exerciseId: 'sys:scorpion-chest-stretch-left', name: 'スコーピオン・チェストストレッチ（左）', type: 'duration', targetSets: 1, defaultReps: 60, interval: 0 }),
+      exercise({ id: 'sun-3', exerciseId: 'sys:scorpion-chest-stretch-right', name: 'スコーピオン・チェストストレッチ（右）', type: 'duration', targetSets: 1, defaultReps: 60, interval: 0 }),
+      exercise({ id: 'sun-4', exerciseId: 'sys:90-90-hip-stretch-left', name: '90-90 ヒップストレッチ（左）', type: 'duration', targetSets: 1, defaultReps: 90, interval: 0 }),
+      exercise({ id: 'sun-5', exerciseId: 'sys:90-90-hip-stretch-right', name: '90-90 ヒップストレッチ（右）', type: 'duration', targetSets: 1, defaultReps: 90, interval: 0 }),
+      exercise({ id: 'sun-6', exerciseId: 'sys:couch-stretch-left', name: 'カウチストレッチ（左）', type: 'duration', targetSets: 1, defaultReps: 90, interval: 0 }),
+      exercise({ id: 'sun-7', exerciseId: 'sys:couch-stretch-right', name: 'カウチストレッチ（右）', type: 'duration', targetSets: 1, defaultReps: 90, interval: 0 }),
+      exercise({ id: 'sun-8', exerciseId: 'sys:downdog-to-cobra', name: 'ダウンドッグ〜コブラ', type: 'duration', targetSets: 1, defaultReps: 120, interval: 0 }),
+      exercise({ id: 'sun-9', exerciseId: 'sys:supine-deep-breathing', name: '仰向けディープブリージング', type: 'duration', targetSets: 1, defaultReps: 120, interval: 0 })
     ],
     cooldown: []
   }

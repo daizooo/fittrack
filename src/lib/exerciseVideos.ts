@@ -71,6 +71,7 @@ export const BUILTIN_EXERCISE_VIDEOS: Record<string, string[]> = {
   'kneeling-face-pull': ['09_tuesday_main_kneeling_face_pull'],
   'pushup-bar-sprawl': ['13_wednesday_main_pushup_bar_sprawl'],
   'mountain-climber': ['14_wednesday_main_mountain_climber'],
+  'tabata-sprawl-mountain-climber': ['13_wednesday_main_pushup_bar_sprawl', '14_wednesday_main_mountain_climber'],
   'assist-dips': ['18_thursday_main_st146_dips'],
   'deficit-push-up': ['19_thursday_main_deficit_pushup'],
   'back-lunge': ['22_friday_main_alternating_back_lunge'],
@@ -80,8 +81,14 @@ export const BUILTIN_EXERCISE_VIDEOS: Record<string, string[]> = {
   'seated-tube-row': ['29_saturday_main_seated_band_row'],
   'cat-cow': ['06_tuesday_warmup_cat_cow'],
   'scorpion-chest-stretch': ['31_sunday_mobility_scorpion_stretch'],
+  'scorpion-chest-stretch-left': ['31_sunday_mobility_scorpion_stretch'],
+  'scorpion-chest-stretch-right': ['31_sunday_mobility_scorpion_stretch'],
   '90-90-hip-stretch': ['32_sunday_mobility_90_90_hip_stretch'],
+  '90-90-hip-stretch-left': ['32_sunday_mobility_90_90_hip_stretch'],
+  '90-90-hip-stretch-right': ['32_sunday_mobility_90_90_hip_stretch'],
   'couch-stretch': ['33_sunday_mobility_couch_stretch'],
+  'couch-stretch-left': ['33_sunday_mobility_couch_stretch'],
+  'couch-stretch-right': ['33_sunday_mobility_couch_stretch'],
   'downdog-to-cobra': ['34_sunday_mobility_downdog_to_cobra'],
   'supine-deep-breathing': ['35_sunday_cooldown_supine_deep_breathing']
 }

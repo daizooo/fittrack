@@ -95,11 +95,18 @@ const SEEDS: Seed[] = [
   ['jumping-jack', 'ジャンピングジャック', 'cardio', 'duration', 'bodyweight'],
   ['high-knees', 'ハイニー', 'cardio', 'duration', 'bodyweight', ['もも上げ']],
   ['pushup-bar-sprawl', 'スロール（プッシュアップバー）', 'cardio', 'duration', 'bodyweight', ['プッシュアップバー・スロール', 'サイレントバーピー']],
+  ['tabata-sprawl-mountain-climber', 'タバタ（奇数R:スロール／偶数R:マウンテンクライマー）', 'cardio', 'hiit', 'bodyweight'],
   // モビリティ・リカバリー
   ['cat-cow', 'キャット＆カウ', 'other', 'duration', 'bodyweight'],
   ['scorpion-chest-stretch', 'スコーピオン・チェストストレッチ', 'other', 'duration', 'bodyweight'],
+  ['scorpion-chest-stretch-left', 'スコーピオン・チェストストレッチ（左）', 'other', 'duration', 'bodyweight'],
+  ['scorpion-chest-stretch-right', 'スコーピオン・チェストストレッチ（右）', 'other', 'duration', 'bodyweight'],
   ['90-90-hip-stretch', '90-90 ヒップストレッチ', 'other', 'duration', 'bodyweight'],
+  ['90-90-hip-stretch-left', '90-90 ヒップストレッチ（左）', 'other', 'duration', 'bodyweight'],
+  ['90-90-hip-stretch-right', '90-90 ヒップストレッチ（右）', 'other', 'duration', 'bodyweight'],
   ['couch-stretch', 'カウチストレッチ', 'other', 'duration', 'bodyweight'],
+  ['couch-stretch-left', 'カウチストレッチ（左）', 'other', 'duration', 'bodyweight'],
+  ['couch-stretch-right', 'カウチストレッチ（右）', 'other', 'duration', 'bodyweight'],
   ['downdog-to-cobra', 'ダウンドッグ〜コブラ', 'other', 'duration', 'bodyweight'],
   ['supine-deep-breathing', '仰向けディープブリージング', 'other', 'duration', 'bodyweight']
 ]
