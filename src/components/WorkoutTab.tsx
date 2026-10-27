@@ -5,6 +5,7 @@ import {
 import { buildSession, estimatePlanMinutes, lastPerformedMap, recommendPlanId, segmentExercises } from '../lib/plans'
 import { daysAgo, daysOfWeek, formatDaysAgo, isSameDay } from '../lib/dates'
 import { EquipmentSelector, NumberField, NumberInputStepper } from './ui'
+import { VideoButton } from './VideoButton'
 import type {
   EquipmentOption, SessionData, SessionExercise, SetData, StretchPhase, TimerState, WorkoutPlan, WorkoutRecord
 } from '../types'
@@ -76,7 +77,10 @@ const StretchSection = ({ phase, session, setSession, timer }: {
         {items.map((s, idx) => (
           <TimedRow key={s.id} state={running === idx ? 'running' : null} dim={false} idleBg={s.completed ? 'bg-green-50' : 'bg-white'} className="flex items-center gap-2 p-2 rounded-xl transition-all">
             <div className="flex-1 min-w-0">
-              <div className={`font-bold truncate ${running === idx ? 'text-lg font-black text-white' : s.completed ? 'text-sm text-gray-400 line-through' : 'text-sm text-gray-800'}`}>{s.name}</div>
+              <div className="flex items-center gap-2 min-w-0">
+                <div className={`font-bold truncate ${running === idx ? 'text-lg font-black text-white' : s.completed ? 'text-sm text-gray-400 line-through' : 'text-sm text-gray-800'}`}>{s.name}</div>
+                <VideoButton videoIds={s.videoIds} name={s.name} />
+              </div>
               {running === idx
                 ? <RowTimerDisplay timer={timer} />
                 : <div className="text-[10px] text-gray-400 font-bold flex items-center gap-0.5"><Timer size={10} />{s.seconds}秒</div>}
@@ -262,6 +266,7 @@ const CircuitSessionCard = ({ items, start, timer, onSetUpdate, onToggle, onRoun
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 min-w-0">
                         <div className={`font-bold truncate ${active ? 'text-lg font-black text-white' : set.completed ? 'text-sm text-gray-400 line-through' : 'text-sm text-gray-800'}`}>{ex.name}</div>
+                        <VideoButton videoIds={ex.videoIds} name={ex.name} />
                         {state === 'next' && <NextBadge timer={timer} />}
                       </div>
                       {active ? <RowTimerDisplay timer={timer} state={state} /> : (
@@ -415,6 +420,7 @@ const ActiveSession = ({ session, setSession, timer, onSaveWorkout, onCancel }: 
                 <h3 className="font-bold text-[15px] text-gray-800 flex items-center gap-2 leading-tight">
                   <span className="bg-blue-100 text-blue-600 w-6 h-6 flex justify-center items-center rounded-full text-xs flex-shrink-0">{exIdx + 1}</span>
                   {ex.name}
+                  <VideoButton videoIds={ex.videoIds} name={ex.name} />
                   {ex.inherited && <span className="text-[9px] bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded font-black tracking-wider ml-1">前回引継</span>}
                   {isSessionInSuperset && <span className="text-[9px] bg-purple-100 text-purple-600 px-1.5 py-0.5 rounded font-black tracking-wider ml-1">SS</span>}
                 </h3>
@@ -602,7 +608,15 @@ export default function WorkoutTab(props: WorkoutTabProps) {
                   <div key={ex.id} className="text-sm text-gray-700 flex items-center justify-between py-0.5 border-l-2 border-emerald-400 pl-2 -ml-2">
                     <div className="flex items-center gap-2 min-w-0">
                       <span className="text-[8px] bg-emerald-100 text-emerald-600 px-1 rounded font-black flex-shrink-0">サーキット</span>
-                      <span className="truncate">{(ex.stations ?? []).map(x => x.name).join(' → ')}</span>
+                      <span className="flex flex-wrap items-center gap-x-1.5 gap-y-1 min-w-0">
+                        {(ex.stations ?? []).map((x, si) => (
+                          <span key={x.id} className="flex items-center gap-1">
+                            {si > 0 && <span className="text-gray-300">→</span>}
+                            <span>{x.name}</span>
+                            <VideoButton videoIds={x.videoIds} name={x.name} />
+                          </span>
+                        ))}
+                      </span>
                     </div>
                     <span className="text-gray-400 text-xs flex-shrink-0 ml-2">{ex.targetSets}周</span>
                   </div>
@@ -617,6 +631,7 @@ export default function WorkoutTab(props: WorkoutTabProps) {
                     <div className="flex items-center gap-2">
                       <span className={`w-1.5 h-1.5 rounded-full ${inSS ? 'bg-purple-400' : 'bg-blue-500'}`}></span>
                       {ex.name}
+                      <VideoButton videoIds={ex.videoIds} name={ex.name} />
                       {inSS && <span className="text-[8px] bg-purple-100 text-purple-600 px-1 rounded font-black">SS</span>}
                     </div>
                     <span className="text-gray-400 text-xs">{ex.targetSets}セット</span>

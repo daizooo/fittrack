@@ -2,7 +2,7 @@ import type {
   WorkoutPlan, WorkoutRecord, Exercise, CircuitStation, Stretch, SessionExercise, SessionStretch,
   SessionData, SetData, EquipmentOption
 } from '../types'
-import { daysOfWeek } from './dates'
+import { daysOfWeek, isSameDay } from './dates'
 import { sameExercise } from './exerciseLibrary'
 
 // ─── DB row mapping ──────────────────────────────────────────────────────────
@@ -145,10 +145,16 @@ export const lastPerformedMap = (records: WorkoutRecord[]) => {
   return map
 }
 
-/** おすすめ: 一度も実施していないプラン → 最も前回から日が空いているプラン */
-export const recommendPlanId = (plans: WorkoutPlan[], records: WorkoutRecord[]): string | null => {
+/**
+ * おすすめ: 今日の曜日で始まる名前のプラン（「月曜：…」など。今日まだ実施していなければ）
+ * → 一度も実施していないプラン → 最も前回から日が空いているプラン
+ */
+export const recommendPlanId = (plans: WorkoutPlan[], records: WorkoutRecord[], now: Date = new Date()): string | null => {
   const candidates = plans.filter(p => p.exercises.length > 0)
   if (candidates.length === 0) return null
+  const todays = candidates.find(p => p.name.startsWith(`${daysOfWeek[now.getDay()]}曜`))
+  const doneToday = (name: string) => records.some(r => r.type === 'workout' && r.category === name && isSameDay(new Date(r.fullDate), now))
+  if (todays && !doneToday(todays.name)) return todays.id
   const last = lastPerformedMap(records)
   const sorted = [...candidates].sort((a, b) => {
     const la = last.get(a.name)
@@ -166,10 +172,10 @@ export const recommendPlanId = (plans: WorkoutPlan[], records: WorkoutRecord[]):
 export const expandStretches = (list: Stretch[]): SessionStretch[] =>
   list.flatMap(s => s.bilateral
     ? [
-        { id: `${s.id}-L`, name: `${s.name}（左）`, seconds: s.seconds, completed: false },
-        { id: `${s.id}-R`, name: `${s.name}（右）`, seconds: s.seconds, completed: false }
+        { id: `${s.id}-L`, name: `${s.name}（左）`, seconds: s.seconds, completed: false, videoIds: s.videoIds },
+        { id: `${s.id}-R`, name: `${s.name}（右）`, seconds: s.seconds, completed: false, videoIds: s.videoIds }
       ]
-    : [{ id: s.id, name: s.name, seconds: s.seconds, completed: false }])
+    : [{ id: s.id, name: s.name, seconds: s.seconds, completed: false, videoIds: s.videoIds }])
 
 export const buildSession = (
   plan: WorkoutPlan,
@@ -186,7 +192,7 @@ export const buildSession = (
         const lastEx = lastWorkout?.exercises.find(e => sameExercise(e, st))
         const weightAt = (i: number) => lastEx ? (lastEx.sets[i] ?? lastEx.sets[lastEx.sets.length - 1])?.weight ?? st.defaultWeight : st.defaultWeight
         return {
-          id: st.id, exerciseId: st.exerciseId, name: st.name, type: 'duration', targetSets: ex.targetSets, defaultReps: ex.defaultReps,
+          id: st.id, exerciseId: st.exerciseId, name: st.name, videoIds: st.videoIds, type: 'duration', targetSets: ex.targetSets, defaultReps: ex.defaultReps,
           defaultWeight: st.defaultWeight, interval: ex.interval, equipmentType: st.equipmentType,
           supersetGroup: ex.id, circuit: true, inherited: !!lastEx,
           options: equipmentOptionsMap.get(st.equipmentType) ?? [{ label: 'ー', weight: 0 }],

@@ -21,6 +21,7 @@ export interface ExerciseDef {
   note: string
   builtin: boolean
   aliases?: string[]              // 標準種目の別名（検索・旧データの名前照合用）
+  videoIds?: string[]             // 解説動画（exerciseVideos.ts のカタログID）
 }
 
 export interface EquipmentOption {
@@ -58,6 +59,7 @@ export interface Exercise {
   tabataRest?: number
   tabataCycles?: number
   supersetGroup?: string          // exercises sharing the same non-empty value are performed as a superset
+  videoIds?: string[]             // 解説動画（exerciseVideos.ts のカタログID）。無ければ種目マスタの動画を使う
   /**
    * type === 'circuit' のときの種目リスト。サーキット自体が運動・休憩・周回数を1つだけ持つ:
    *   defaultReps = 運動秒数 / interval = 休憩秒数 / targetSets = 周回数（種目ごとには持たない）
@@ -72,6 +74,7 @@ export interface CircuitStation {
   name: string
   equipmentType: string
   defaultWeight: number
+  videoIds?: string[]
 }
 
 /** ワークアウト前後のストレッチ1項目 */
@@ -80,6 +83,7 @@ export interface Stretch {
   name: string
   seconds: number                 // 1回（片側）あたりの秒数
   bilateral?: boolean             // true = 左右それぞれ実施（セッションでは左・右の2行に展開）
+  videoIds?: string[]             // 解説動画（exerciseVideos.ts のカタログID）
 }
 
 /** ユーザーが自由に作成するワークアウトプラン（曜日には紐付かない） */
@@ -117,6 +121,7 @@ export interface SessionStretch {
   name: string                    // 左右展開済みの表示名（例: 「ハムストリング（左）」）
   seconds: number
   completed: boolean
+  videoIds?: string[]
 }
 
 export interface SessionStretches {

@@ -13,7 +13,9 @@ import { useUnsavedGuard } from '../lib/unsavedGuard'
 import { daysAgo, formatDaysAgo } from '../lib/dates'
 import { DiscardDialog, NumberField, Stepper, scrollAppToTop } from './ui'
 import { ExercisePicker, type ExerciseActions, type ExerciseUsage } from './ExercisePicker'
+import { VideoButton } from './VideoButton'
 import { exerciseFromDef } from '../lib/exerciseLibrary'
+import { missingWeeklyPlans, weeklyProgramPlans } from '../lib/weeklyProgram'
 import type { CircuitStation, EquipmentItem, Exercise, ExerciseDef, Stretch, StretchPhase, WorkoutPlan, WorkoutRecord } from '../types'
 
 // ─── Stretch presets ─────────────────────────────────────────────────────────
@@ -562,6 +564,7 @@ const StretchSummary = ({ phase, items }: { phase: StretchPhase; items: Stretch[
         {items.map(s => (
           <span key={s.id} className="bg-white text-gray-700 text-xs font-bold rounded-lg px-2.5 py-1">
             {s.name} <span className="text-gray-400 font-medium">{s.seconds}秒{s.bilateral ? '×左右' : ''}</span>
+            {s.videoIds && s.videoIds.length > 0 && <span className="ml-1.5 inline-flex align-middle"><VideoButton videoIds={s.videoIds} name={s.name} /></span>}
           </span>
         ))}
       </div>
@@ -586,8 +589,9 @@ export const ExerciseList = ({ exercises }: { exercises: Exercise[] }) => (
             </div>
             <ol className="space-y-1">
               {(ex.stations ?? []).map((st, i) => (
-                <li key={st.id} className="text-sm font-bold text-gray-800 flex gap-2">
+                <li key={st.id} className="text-sm font-bold text-gray-800 flex gap-2 items-center">
                   <span className="text-emerald-500 opacity-70">{i + 1}.</span>{st.name}
+                  <VideoButton videoIds={st.videoIds} name={st.name} />
                 </li>
               ))}
             </ol>
@@ -603,6 +607,7 @@ export const ExerciseList = ({ exercises }: { exercises: Exercise[] }) => (
             <div className="font-bold text-gray-800 mb-3 flex gap-2 text-lg items-center">
               <span className="text-blue-500 opacity-50">{idx + 1}.</span>
               {ex.name}
+              <VideoButton videoIds={ex.videoIds} name={ex.name} />
               {isInSuperset && <span className="text-[9px] bg-purple-100 text-purple-600 px-1.5 py-0.5 rounded font-black tracking-wider">SS</span>}
             </div>
             <div className="flex flex-wrap gap-2">
@@ -643,8 +648,29 @@ export default function PlanTab({ userId, plans, setPlans, equipment, records, l
   useEffect(() => { scrollAppToTop() }, [view.mode, view.mode === 'detail' ? view.id : null])
   const [confirmDelete, setConfirmDelete] = useState<WorkoutPlan | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
+  const [adding, setAdding] = useState(false)
+  useEffect(() => { setNotice(null) }, [view.mode])
   const lastPerformed = lastPerformedMap(records)
   const nextSortOrder = plans.reduce((m, p) => Math.max(m, p.sortOrder), 0) + 1
+  const missingWeekly = missingWeeklyPlans(plans)
+
+  /** 週間トレーニング（月〜日）のうち、まだ無いプランをまとめて作る */
+  const addWeeklyProgram = async () => {
+    setAdding(true)
+    setError(null)
+    setNotice(null)
+    const created: WorkoutPlan[] = missingWeekly.map((seed, i) => ({ ...seed, id: uuid(), sortOrder: nextSortOrder + i }))
+    const { error } = await supabase.from('workout_plans').insert(created.map(p => planToRow(p, userId)))
+    setAdding(false)
+    if (error) {
+      console.error('Failed to add weekly program:', error)
+      setError(`プランの追加に失敗しました: ${error.message}`)
+      return
+    }
+    setPlans(prev => [...prev, ...created].sort((a, b) => a.sortOrder - b.sortOrder))
+    setNotice(`${created.length}つのプランを追加しました`)
+  }
 
   const savePlan = async (plan: WorkoutPlan): Promise<string | null> => {
     const { error } = await supabase.from('workout_plans').upsert(planToRow(plan, userId))
@@ -702,6 +728,9 @@ export default function PlanTab({ userId, plans, setPlans, equipment, records, l
       {error && (
         <div role="alert" className="mb-4 p-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-600">{error}</div>
       )}
+      {notice && !detail && (
+        <div role="status" className="mb-4 p-3 bg-green-50 border border-green-200 rounded-xl text-sm font-bold text-green-700">{notice}</div>
+      )}
 
       {detail ? (
         <>
@@ -735,6 +764,21 @@ export default function PlanTab({ userId, plans, setPlans, equipment, records, l
               <p className="text-gray-500 text-xs font-medium mt-1">作ったプランから、毎日ワークアウトタブで選んで実施します</p>
             </div>
           </div>
+          {missingWeekly.length > 0 && (
+            <div className="mb-4 p-4 bg-indigo-50 border border-indigo-100 rounded-2xl">
+              <h3 className="font-black text-indigo-800 text-sm">週間トレーニング（月〜日）を追加</h3>
+              <p className="text-xs text-indigo-700/80 mt-1 mb-3">
+                1回10〜15分のメニュー。解説動画つきの{weeklyProgramPlans.length}プラン（月曜〜日曜）をまとめて作ります
+                {missingWeekly.length < weeklyProgramPlans.length ? `（未追加の${missingWeekly.length}プランだけ追加）` : ''}。
+              </p>
+              <button
+                onClick={addWeeklyProgram} disabled={adding}
+                className="w-full py-2.5 bg-indigo-600 text-white text-sm font-bold rounded-xl shadow-sm active:scale-95 transition-transform disabled:opacity-50"
+              >
+                {adding ? '追加しています…' : `${missingWeekly.length}つのプランを追加する`}
+              </button>
+            </div>
+          )}
           <div className="space-y-3">
             {plans.map(plan => {
               const last = lastPerformed.get(plan.name)
