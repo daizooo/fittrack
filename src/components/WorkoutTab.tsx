@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 import {
   Play, Moon, CheckCircle, ChevronLeft, Minus, Plus, Timer, Sunrise, Sunset, Clock, Star, PlayCircle, Repeat, ChevronDown, Pause, X
 } from 'lucide-react'
-import { buildSession, estimatePlanMinutes, lastPerformedMap, recommendPlanId, segmentExercises } from '../lib/plans'
+import { buildSession, estimatePlanMinutes, lastPerformedMap, recommendPlanId, recordsForInheritance, segmentExercises } from '../lib/plans'
 import { daysAgo, daysOfWeek, formatDaysAgo, isSameDay } from '../lib/dates'
 import { EquipmentSelector, NumberField, NumberInputStepper } from './ui'
 import { VideoButton } from './VideoButton'
@@ -23,6 +23,8 @@ export interface TimerControls {
 interface WorkoutTabProps {
   plans: WorkoutPlan[]
   records: WorkoutRecord[]
+  /** 「前回引継ぎ」をリセットした日時。これより前の記録は、前回引継に使わない */
+  inheritResetAt?: string | null
   equipmentOptionsMap: Map<string, EquipmentOption[]>
   session: SessionData | null
   setSession: React.Dispatch<React.SetStateAction<SessionData | null>>
@@ -532,7 +534,7 @@ const ActiveSession = ({ session, setSession, timer, onSaveWorkout, onCancel }: 
 // ─── Plan picker (idle) ──────────────────────────────────────────────────────
 
 export default function WorkoutTab(props: WorkoutTabProps) {
-  const { plans, records, equipmentOptionsMap, session, setSession, timer, onSaveWorkout, onRest, onCancel, onGoToPlans } = props
+  const { plans, records, inheritResetAt = null, equipmentOptionsMap, session, setSession, timer, onSaveWorkout, onRest, onCancel, onGoToPlans } = props
   const recommendedId = useMemo(() => recommendPlanId(plans, records), [plans, records])
   const [selectedId, setSelectedId] = useState<string | null>(recommendedId)
   const lastPerformed = useMemo(() => lastPerformedMap(records), [records])
@@ -646,7 +648,7 @@ export default function WorkoutTab(props: WorkoutTabProps) {
           </div>
           {(selected.exercises.length > 0 || selected.warmup.length > 0 || selected.cooldown.length > 0) && (
             <button
-              onClick={() => setSession(buildSession(selected, records, equipmentOptionsMap))}
+              onClick={() => setSession(buildSession(selected, recordsForInheritance(records, inheritResetAt), equipmentOptionsMap))}
               className="w-full mt-4 bg-blue-600 text-white font-bold py-4 rounded-2xl shadow-lg shadow-blue-500/30 flex justify-center gap-2 active:scale-95 transition-transform"
             >
               <Play size={20} /> トレーニングを開始する

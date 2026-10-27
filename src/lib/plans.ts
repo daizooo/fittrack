@@ -169,6 +169,13 @@ export const recommendPlanId = (plans: WorkoutPlan[], records: WorkoutRecord[], 
 
 // ─── Session building ────────────────────────────────────────────────────────
 
+/** 前回引継の対象にする記録。リセットした日時より前の記録は、引き継ぎには使わない（履歴・分析には残る） */
+export const recordsForInheritance = (records: WorkoutRecord[], resetAt: string | null): WorkoutRecord[] => {
+  if (!resetAt) return records
+  const t = new Date(resetAt).getTime()
+  return records.filter(r => new Date(r.fullDate).getTime() > t)
+}
+
 export const expandStretches = (list: Stretch[]): SessionStretch[] =>
   list.flatMap(s => s.bilateral
     ? [

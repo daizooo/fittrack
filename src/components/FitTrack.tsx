@@ -66,6 +66,8 @@ export default function FitTrack({ userId }: { userId: string }) {
   const [records, setRecords] = useState<WorkoutRecord[]>([])
   const [equipment, setEquipment] = useState<EquipmentItem[]>([])
   const [profile, setProfile] = useState<Profile | null>(null)
+  /** 「設定 > 前回引継ぎ」をリセットした日時（この日時より前の記録は前回引継に使わない） */
+  const [inheritResetAt, setInheritResetAt] = useState<string | null>(null)
   const [bodyLogs, setBodyLogs] = useState<BodyLog[]>([])
   const [dataLoading, setDataLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -331,6 +333,7 @@ export default function FitTrack({ userId }: { userId: string }) {
           .maybeSingle()
         if (profileError) console.error('Failed to load profile:', profileError)
         if (profileData) {
+          setInheritResetAt((profileData.inherit_reset_at as string | null | undefined) ?? null)
           setProfile({
             height: profileData.height as number | null,
             birth_date: profileData.birth_date as string | null,
@@ -392,6 +395,18 @@ export default function FitTrack({ userId }: { userId: string }) {
     }
 
     setProfile(newProfile)
+    return null
+  }
+
+  /** 前回引継ぎのリセット。記録は消さず、いまの日時より前の記録を引き継ぎの対象から外す */
+  const resetInheritance = async (): Promise<string | null> => {
+    const at = new Date().toISOString()
+    const { error } = await supabase.from('profiles').upsert({ user_id: userId, inherit_reset_at: at })
+    if (error) {
+      console.error('Failed to reset inheritance:', error)
+      return `リセットに失敗しました: ${error.message}（Supabase に migration 007 を適用してください）`
+    }
+    setInheritResetAt(at)
     return null
   }
 
@@ -651,6 +666,7 @@ export default function FitTrack({ userId }: { userId: string }) {
           <WorkoutTab
             plans={planList}
             records={recordList}
+            inheritResetAt={inheritResetAt}
             equipmentOptionsMap={equipmentOptionsMap}
             session={currentSession}
             setSession={setCurrentSession}
@@ -676,6 +692,8 @@ export default function FitTrack({ userId }: { userId: string }) {
             setBodyLogs={setBodyLogs}
             plans={planList}
             records={recordList}
+            inheritResetAt={inheritResetAt}
+            onResetInheritance={resetInheritance}
           />
         )}
       </main>
