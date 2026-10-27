@@ -2,7 +2,7 @@ import type {
   WorkoutPlan, WorkoutRecord, Exercise, CircuitStation, Stretch, SessionExercise, SessionStretch,
   SessionData, SetData, EquipmentOption
 } from '../types'
-import { daysOfWeek } from './dates'
+import { daysOfWeek, isSameDay } from './dates'
 import { sameExercise } from './exerciseLibrary'
 
 // ─── DB row mapping ──────────────────────────────────────────────────────────
@@ -145,10 +145,16 @@ export const lastPerformedMap = (records: WorkoutRecord[]) => {
   return map
 }
 
-/** おすすめ: 一度も実施していないプラン → 最も前回から日が空いているプラン */
-export const recommendPlanId = (plans: WorkoutPlan[], records: WorkoutRecord[]): string | null => {
+/**
+ * おすすめ: 今日の曜日で始まる名前のプラン（「月曜：…」など。今日まだ実施していなければ）
+ * → 一度も実施していないプラン → 最も前回から日が空いているプラン
+ */
+export const recommendPlanId = (plans: WorkoutPlan[], records: WorkoutRecord[], now: Date = new Date()): string | null => {
   const candidates = plans.filter(p => p.exercises.length > 0)
   if (candidates.length === 0) return null
+  const todays = candidates.find(p => p.name.startsWith(`${daysOfWeek[now.getDay()]}曜`))
+  const doneToday = (name: string) => records.some(r => r.type === 'workout' && r.category === name && isSameDay(new Date(r.fullDate), now))
+  if (todays && !doneToday(todays.name)) return todays.id
   const last = lastPerformedMap(records)
   const sorted = [...candidates].sort((a, b) => {
     const la = last.get(a.name)
@@ -163,13 +169,20 @@ export const recommendPlanId = (plans: WorkoutPlan[], records: WorkoutRecord[]):
 
 // ─── Session building ────────────────────────────────────────────────────────
 
+/** 前回引継の対象にする記録。リセットした日時より前の記録は、引き継ぎには使わない（履歴・分析には残る） */
+export const recordsForInheritance = (records: WorkoutRecord[], resetAt: string | null): WorkoutRecord[] => {
+  if (!resetAt) return records
+  const t = new Date(resetAt).getTime()
+  return records.filter(r => new Date(r.fullDate).getTime() > t)
+}
+
 export const expandStretches = (list: Stretch[]): SessionStretch[] =>
   list.flatMap(s => s.bilateral
     ? [
-        { id: `${s.id}-L`, name: `${s.name}（左）`, seconds: s.seconds, completed: false },
-        { id: `${s.id}-R`, name: `${s.name}（右）`, seconds: s.seconds, completed: false }
+        { id: `${s.id}-L`, name: `${s.name}（左）`, seconds: s.seconds, completed: false, videoIds: s.videoIds },
+        { id: `${s.id}-R`, name: `${s.name}（右）`, seconds: s.seconds, completed: false, videoIds: s.videoIds }
       ]
-    : [{ id: s.id, name: s.name, seconds: s.seconds, completed: false }])
+    : [{ id: s.id, name: s.name, seconds: s.seconds, completed: false, videoIds: s.videoIds }])
 
 export const buildSession = (
   plan: WorkoutPlan,
@@ -186,7 +199,7 @@ export const buildSession = (
         const lastEx = lastWorkout?.exercises.find(e => sameExercise(e, st))
         const weightAt = (i: number) => lastEx ? (lastEx.sets[i] ?? lastEx.sets[lastEx.sets.length - 1])?.weight ?? st.defaultWeight : st.defaultWeight
         return {
-          id: st.id, exerciseId: st.exerciseId, name: st.name, type: 'duration', targetSets: ex.targetSets, defaultReps: ex.defaultReps,
+          id: st.id, exerciseId: st.exerciseId, name: st.name, videoIds: st.videoIds, type: 'duration', targetSets: ex.targetSets, defaultReps: ex.defaultReps,
           defaultWeight: st.defaultWeight, interval: ex.interval, equipmentType: st.equipmentType,
           supersetGroup: ex.id, circuit: true, inherited: !!lastEx,
           options: equipmentOptionsMap.get(st.equipmentType) ?? [{ label: 'ー', weight: 0 }],
@@ -201,26 +214,25 @@ export const buildSession = (
     const lastEx = lastWorkout ? lastWorkout.exercises.find(e => sameExercise(e, ex)) : null
     const inherited = !!lastEx
 
-    let sets: SetData[]
-    if (inherited && lastEx) {
-      sets = lastEx.sets.map(s => ({ ...s, completed: false }))
-    } else {
-      sets = Array.from({ length: ex.targetSets }, (_, i) => ({
-        setNumber: i + 1,
-        reps: ex.type === 'tabata' ? 0 : ex.defaultReps,
-        weight: ex.defaultWeight || 0,
-        completed: false,
-        tabataWork: ex.type === 'tabata' ? ex.tabataWork : 0,
-        tabataRest: ex.type === 'tabata' ? ex.tabataRest : 0,
-        tabataCycles: ex.type === 'tabata' ? ex.tabataCycles : 0
-      }))
-    }
+    // セット数・回数・秒数・Tabata の設定はプランの現在の内容にする（別のプランで実施した回数に引きずられない）。
+    // 前回から引き継ぐのは負荷だけ（サーキットと同じ）。機材が違えば負荷の意味が変わるので引き継がない
+    const lastSets = lastEx && lastEx.equipmentType === ex.equipmentType ? lastEx.sets : []
+    const weightAt = (i: number) =>
+      lastSets.length > 0 ? (lastSets[i] ?? lastSets[lastSets.length - 1]).weight : ex.defaultWeight || 0
+    const sets: SetData[] = Array.from({ length: ex.targetSets }, (_, i) => ({
+      setNumber: i + 1,
+      reps: ex.type === 'tabata' ? 0 : ex.defaultReps,
+      weight: weightAt(i),
+      completed: false,
+      tabataWork: ex.type === 'tabata' ? ex.tabataWork : 0,
+      tabataRest: ex.type === 'tabata' ? ex.tabataRest : 0,
+      tabataCycles: ex.type === 'tabata' ? ex.tabataCycles : 0
+    }))
 
     return [{
       ...ex,
       inherited,
       options: equipmentOptionsMap.get(ex.equipmentType) ?? [{ label: 'ー', weight: 0 }],
-      targetSets: inherited && lastEx ? lastEx.sets.length : ex.targetSets,
       sets
     }]
   })

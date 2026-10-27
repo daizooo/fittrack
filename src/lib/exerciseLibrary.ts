@@ -1,6 +1,7 @@
 import type {
   CircuitStation, Exercise, ExerciseDef, ExerciseKind, ExerciseType, MuscleGroup, WorkoutPlan, WorkoutRecord
 } from '../types'
+import { BUILTIN_EXERCISE_VIDEOS } from './exerciseVideos'
 
 // ─── 部位・入力タイプ ────────────────────────────────────────────────────────
 
@@ -43,18 +44,21 @@ const SEEDS: Seed[] = [
   ['diamond-push-up', 'ダイヤモンドプッシュアップ', 'chest', 'reps', 'bodyweight'],
   ['tube-chest-press', 'チューブ・チェストプレス', 'chest', 'reps', 'tube'],
   ['assist-dips', 'アシスト・ディップス', 'chest', 'reps', 'assist', ['ディップス']],
+  ['deficit-push-up', 'デフィシット・プッシュアップ', 'chest', 'reps', 'bodyweight'],
   // 背中
   ['chin-up', 'チンニング', 'back', 'reps', 'assist', ['懸垂', 'プルアップ']],
   ['tube-bent-over-row', 'チューブ・ベントオーバーロウ', 'back', 'reps', 'tube', ['ベントオーバーロウ']],
   ['tube-lat-pulldown', 'チューブ・ラットプルダウン', 'back', 'reps', 'tube', ['ラットプルダウン']],
   ['inverted-row', 'インバーテッドロウ', 'back', 'reps', 'bodyweight', ['斜め懸垂']],
   ['superman', 'スーパーマン', 'back', 'duration', 'bodyweight'],
+  ['seated-tube-row', 'シーテッド・チューブローイング', 'back', 'reps', 'tube', ['シーテッドロウ']],
   // 肩
   ['pike-push-up', 'パイクプッシュアップ', 'shoulders', 'reps', 'bodyweight'],
   ['tube-overhead-press', 'チューブ・オーバーヘッドプレス', 'shoulders', 'reps', 'tube', ['ショルダープレス']],
   ['tube-side-raise', 'チューブ・サイドレイズ', 'shoulders', 'reps', 'tube', ['サイドレイズ']],
   ['tube-front-raise', 'チューブ・フロントレイズ', 'shoulders', 'reps', 'tube', ['フロントレイズ']],
   ['tube-face-pull', 'チューブ・フェイスプル', 'shoulders', 'reps', 'tube', ['フェイスプル']],
+  ['kneeling-face-pull', 'ニーリング・フェイスプル', 'shoulders', 'reps', 'tube'],
   // 腕
   ['tube-arm-curl', 'チューブ・アームカール', 'arms', 'reps', 'tube', ['アームカール']],
   ['tube-triceps-pushdown', 'チューブ・トライセプスPD', 'arms', 'reps', 'tube', ['トライセプスプッシュダウン']],
@@ -74,9 +78,14 @@ const SEEDS: Seed[] = [
   ['jump-squat', 'ジャンプスクワット', 'legs', 'reps', 'bodyweight'],
   ['lunge', 'ランジ', 'legs', 'reps', 'bodyweight'],
   ['bulgarian-squat', 'ブルガリアンスクワット', 'legs', 'reps', 'vest'],
+  ['bulgarian-squat-left', 'ブルガリアンスクワット（左）', 'legs', 'reps', 'vest'],
+  ['bulgarian-squat-right', 'ブルガリアンスクワット（右）', 'legs', 'reps', 'vest'],
+  ['back-lunge', 'オルタネイティング・バックランジ', 'legs', 'reps', 'bodyweight', ['バックランジ']],
+  ['tube-squat-press', 'チューブ・スクワット＆プレス', 'legs', 'reps', 'tube', ['スラスター']],
   ['calf-raise', 'カーフレイズ', 'legs', 'reps', 'bodyweight'],
   ['wall-sit', 'ウォールシット', 'legs', 'duration', 'bodyweight'],
   ['tube-romanian-deadlift', 'チューブ・ルーマニアンDL', 'legs', 'reps', 'tube', ['ルーマニアンデッドリフト']],
+  ['tube-good-morning', 'チューブ・グッドモーニング', 'legs', 'reps', 'tube', ['グッドモーニング']],
   // お尻
   ['hip-thrust', 'ヒップスラスト', 'glutes', 'reps', 'bodyweight'],
   ['glute-bridge', 'グルートブリッジ', 'glutes', 'reps', 'bodyweight', ['ヒップリフト']],
@@ -84,11 +93,26 @@ const SEEDS: Seed[] = [
   ['burpee', 'バーピー', 'cardio', 'reps', 'bodyweight'],
   ['hiit-burpee', 'HIIT（バーピー）', 'cardio', 'hiit', 'bodyweight'],
   ['jumping-jack', 'ジャンピングジャック', 'cardio', 'duration', 'bodyweight'],
-  ['high-knees', 'ハイニー', 'cardio', 'duration', 'bodyweight', ['もも上げ']]
+  ['high-knees', 'ハイニー', 'cardio', 'duration', 'bodyweight', ['もも上げ']],
+  ['pushup-bar-sprawl', 'スロール（プッシュアップバー）', 'cardio', 'duration', 'bodyweight', ['プッシュアップバー・スロール', 'サイレントバーピー']],
+  ['tabata-sprawl-mountain-climber', 'タバタ（奇数R:スロール／偶数R:マウンテンクライマー）', 'cardio', 'hiit', 'bodyweight'],
+  // モビリティ・リカバリー
+  ['cat-cow', 'キャット＆カウ', 'other', 'duration', 'bodyweight'],
+  ['scorpion-chest-stretch', 'スコーピオン・チェストストレッチ', 'other', 'duration', 'bodyweight'],
+  ['scorpion-chest-stretch-left', 'スコーピオン・チェストストレッチ（左）', 'other', 'duration', 'bodyweight'],
+  ['scorpion-chest-stretch-right', 'スコーピオン・チェストストレッチ（右）', 'other', 'duration', 'bodyweight'],
+  ['90-90-hip-stretch', '90-90 ヒップストレッチ', 'other', 'duration', 'bodyweight'],
+  ['90-90-hip-stretch-left', '90-90 ヒップストレッチ（左）', 'other', 'duration', 'bodyweight'],
+  ['90-90-hip-stretch-right', '90-90 ヒップストレッチ（右）', 'other', 'duration', 'bodyweight'],
+  ['couch-stretch', 'カウチストレッチ', 'other', 'duration', 'bodyweight'],
+  ['couch-stretch-left', 'カウチストレッチ（左）', 'other', 'duration', 'bodyweight'],
+  ['couch-stretch-right', 'カウチストレッチ（右）', 'other', 'duration', 'bodyweight'],
+  ['downdog-to-cobra', 'ダウンドッグ〜コブラ', 'other', 'duration', 'bodyweight'],
+  ['supine-deep-breathing', '仰向けディープブリージング', 'other', 'duration', 'bodyweight']
 ]
 
 export const BUILTIN_EXERCISES: ExerciseDef[] = SEEDS.map(([id, name, muscle, kind, equipmentType, aliases]) => ({
-  id: `sys:${id}`, name, muscle, kind, equipmentType, note: '', builtin: true, aliases
+  id: `sys:${id}`, name, muscle, kind, equipmentType, note: '', builtin: true, aliases, videoIds: BUILTIN_EXERCISE_VIDEOS[id]
 }))
 
 // ─── ライブラリ（標準＋自作） ────────────────────────────────────────────────
@@ -176,11 +200,13 @@ export const unresolvedRecordNames = (records: WorkoutRecord[], index: Map<strin
 export const applyLibraryToPlans = (plans: WorkoutPlan[], library: ExerciseDef[]): WorkoutPlan[] => {
   const byId = new Map(library.map(d => [d.id, d]))
   const index = buildNameIndex(library)
-  const link = <T extends { exerciseId?: string; name: string }>(item: T): T => {
+  const link = <T extends { exerciseId?: string; name: string; videoIds?: string[] }>(item: T): T => {
     const id = item.exerciseId ?? index.get(normName(item.name))
     const def = id ? byId.get(id) : undefined
     if (!id) return item
-    return { ...item, exerciseId: id, name: def?.name ?? item.name }
+    // 解説動画は、プラン側に指定があればそれを、無ければ種目マスタのものを使う
+    const videoIds = item.videoIds ?? def?.videoIds
+    return { ...item, exerciseId: id, name: def?.name ?? item.name, ...(videoIds ? { videoIds } : {}) }
   }
   return plans.map(p => ({
     ...p,

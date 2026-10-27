@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import {
   Plus, Trash2, Save, Download, AlertTriangle, X,
-  ChevronDown, ChevronUp, User, Weight, Dumbbell, Edit3, Check
+  ChevronDown, ChevronUp, User, Weight, Dumbbell, Edit3, Check, RotateCcw
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { generateEquipmentOptions } from '../lib/equipmentUtils'
@@ -50,14 +50,31 @@ interface TabProfileProps {
   setBodyLogs: React.Dispatch<React.SetStateAction<BodyLog[]>>
   plans: WorkoutPlan[]
   records: WorkoutRecord[]
+  inheritResetAt: string | null
+  onResetInheritance: () => Promise<string | null>
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function TabProfile({
   userId, equipment, setEquipment, profile, setProfile,
-  bodyLogs, setBodyLogs, plans, records
+  bodyLogs, setBodyLogs, plans, records, inheritResetAt, onResetInheritance
 }: TabProfileProps) {
+
+  // ── 前回引継ぎのリセット ─────────────────────────────────────────────────────
+  const [resetConfirm, setResetConfirm] = useState(false)
+  const [resetting, setResetting] = useState(false)
+  const [resetError, setResetError] = useState<string | null>(null)
+  const [resetDone, setResetDone] = useState(false)
+  const doResetInheritance = async () => {
+    setResetting(true)
+    setResetError(null)
+    const err = await onResetInheritance()
+    setResetting(false)
+    if (err) { setResetError(err); return }
+    setResetConfirm(false)
+    setResetDone(true)
+  }
 
   // ── Physical info (登録済みの値を表示。修正時のみ編集フォームを開く) ────────────
   const [physicalEditing, setPhysicalEditing] = useState(false)
@@ -693,6 +710,40 @@ export default function TabProfile({
               </button>
             </div>
           </div>
+        </div>
+      </Section>
+
+      {/* ── 前回引継ぎ ────────────────────────────────────────────────────────── */}
+      <Section title="前回引継ぎ" icon={<RotateCcw size={18} className="text-gray-500" />}>
+        <div className="pt-4 space-y-3">
+          <p className="text-xs text-gray-500 leading-relaxed">
+            トレーニングを始めるとき、前回と同じ種目の<b>負荷</b>（チューブ・補助・ウェイトの重さ）を引き継ぎます。
+            リセットすると、それまでの記録は引き継ぎに使わず、プランに設定した負荷から始まります。
+            記録そのもの（履歴・分析）は消えません。
+          </p>
+          <p className="text-[11px] font-bold text-gray-400">
+            {inheritResetAt
+              ? `最後にリセットした日時: ${new Date(inheritResetAt).toLocaleString('ja-JP', { dateStyle: 'medium', timeStyle: 'short' })}`
+              : 'まだリセットしていません'}
+          </p>
+          {resetDone && <p role="status" className="text-sm font-bold text-green-600">リセットしました。次のトレーニングから、プランの負荷で始まります。</p>}
+          {resetError && <p role="alert" className="text-sm text-red-600">{resetError}</p>}
+          {resetConfirm ? (
+            <div className="bg-red-50 border border-red-100 rounded-xl p-3 space-y-2">
+              <p className="text-sm font-bold text-red-700">前回引継ぎをリセットしますか？</p>
+              <div className="flex gap-2">
+                <button onClick={() => { setResetConfirm(false); setResetError(null) }} className="flex-1 py-2.5 bg-white border border-gray-200 text-gray-700 text-sm font-bold rounded-xl active:scale-95">キャンセル</button>
+                <button onClick={doResetInheritance} disabled={resetting} className="flex-1 py-2.5 bg-red-500 text-white text-sm font-bold rounded-xl active:scale-95 disabled:opacity-50">{resetting ? 'リセット中…' : 'リセットする'}</button>
+              </div>
+            </div>
+          ) : (
+            <button
+              onClick={() => { setResetConfirm(true); setResetDone(false); setResetError(null) }}
+              className="w-full py-2.5 bg-white border border-gray-200 text-gray-700 text-sm font-bold rounded-xl flex items-center justify-center gap-2 active:scale-95 transition-transform"
+            >
+              <RotateCcw size={14} /> 引継ぎをリセット
+            </button>
+          )}
         </div>
       </Section>
 

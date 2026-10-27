@@ -7,6 +7,7 @@ import {
 } from './ExercisePicker'
 import { ExerciseDetailModal } from './RecordsTab'
 import { DiscardDialog } from './ui'
+import { VideoButton } from './VideoButton'
 import type { EquipmentItem, ExerciseDef, MuscleGroup, WorkoutPlan, WorkoutRecord } from '../types'
 
 type View = { mode: 'list' } | { mode: 'detail'; id: string } | { mode: 'create' } | { mode: 'edit'; id: string }
@@ -75,7 +76,10 @@ export default function ExercisesTab({ library, usage, records, plans, equipment
 
         <div className="mb-4 flex justify-between items-start gap-3 border-l-4 border-indigo-500 pl-2">
           <div className="min-w-0">
-            <h2 className="text-2xl font-black text-gray-800 leading-tight break-words">{def.name}</h2>
+            <h2 className="text-2xl font-black text-gray-800 leading-tight break-words flex items-center gap-2">
+              {def.name}
+              <VideoButton videoIds={def.videoIds} name={def.name} />
+            </h2>
             <ExerciseMeta def={def} usage={usage} />
           </div>
           {!def.builtin && (
