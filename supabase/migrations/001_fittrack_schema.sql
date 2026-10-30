@@ -1,5 +1,5 @@
 -- FitTrack: 統合プロジェクト「Persol」の fittrack スキーマ（旧プロジェクト public の 001〜007 を統合）
--- 旧 public 向けマイグレーションは supabase/legacy-public-migrations/ に保管（新プロジェクトには適用しない）
+-- （旧 public 向けの 001〜007 は移行完了に伴い削除。必要なら git 履歴を参照）
 --
 -- 適用前に: Dashboard > Project Settings > Data API > Exposed schemas に `fittrack` を追加すること
 --           （未追加だと PostgREST が PGRST106 "The schema must be one of the following" を返す）

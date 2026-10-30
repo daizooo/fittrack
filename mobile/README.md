@@ -116,3 +116,13 @@ Windows/Mac環境で行う（sukusukuの `docs/mobile-local-build.md` と同じ�
 
 現在Web版・mobile版とも同じ新プロジェクトを参照している。今後Supabase側の設定
 （Auth Provider、Redirect URLsなど）を変更する際は、このプロジェクトに対して行う。
+
+## 統合プロジェクト「Persol」への再移行（2026-10-30）
+
+上記の移行先プロジェクトから、統合 Supabase プロジェクト「Persol」の `fittrack` スキーマへ再移行した
+（Persol は `sukusuku` / `denken3` と同居。Free プランのプロジェクト枠を節約するため）。
+
+- スキーマ定義は `supabase/migrations/001_fittrack_schema.sql` の1本（`fittrack.*`）に統合
+- クライアントは Web版・mobile版とも `createClient(..., { db: { schema: 'fittrack' } })` で初期化
+- 再始動時は `mobile/.env.local` を Persol の URL / anon キーに更新し、Redirect URLs に `fittrack://**` を追加すること
+
