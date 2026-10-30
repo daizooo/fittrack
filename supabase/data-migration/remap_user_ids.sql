@@ -1,5 +1,6 @@
 -- FitTrack データ移管: 旧プロジェクトのユーザーID → 新プロジェクト「Persol」のユーザーID に付け替える
--- 手順は docs/supabase-migration-to-persol.md を参照。
+-- ターミナルで pg_dump を使う場合の方法（docs/supabase-migration-to-persol.md の付録）。
+-- ブラウザだけで移行する場合は export_from_old.sql を使う（こちらは不要）。
 --
 -- 前提: 旧データを session_replication_role = replica で fittrack.* に流し込み済み
 --       （FK を一時的に無効化しているため、旧UUIDの行もそのまま入っている）
