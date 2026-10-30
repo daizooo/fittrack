@@ -4,8 +4,7 @@
 
 - このプロジェクトは fittrack スキーマ専任です。同一プロジェクト内の他スキーマ（sukusuku/denken3/public）に対するテーブル作成・変更・データ削除は禁止します。
 - マイグレーション時は必ず fittrack.テーブル名 の形式を使用してください。
-- 接続先は統合 Supabase プロジェクト「Persol」（ref: `jmysgeulujggdmdthqkn`）。旧アカウントのプロジェクト（ref: `elypeacduoihmukyoanl`）は移行元で、新規の変更は加えない。
-- `supabase/legacy-public-migrations/` は旧プロジェクト（public）の履歴。新プロジェクトへ適用しない。
+- 接続先は統合 Supabase プロジェクト「Persol」（ref: `jmysgeulujggdmdthqkn`）。旧アカウントのプロジェクトからの移行は 2026-10-30 に完了済み（旧プロジェクトは削除）。
 - クライアントは `createClient(..., { db: { schema: 'fittrack' } })` で初期化済み。`.schema('public')` 等で別スキーマを参照するコードを書かない。
 - `execute_sql` / `apply_migration` を使う前に、SQL が `fittrack.` 以外のスキーマに触れていないか確認する（`DROP` / `TRUNCATE` / `DELETE` は特に）。
 
