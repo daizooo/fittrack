@@ -56,7 +56,13 @@ Vercel > fittrack > Settings > **Environment Variables** で、既存の変数�
 「…」> **Redeploy**（Vite はビルド時に値を埋め込むため必須）。
 
 プレビュー URL（PR の Vercel コメント内の「Preview」）を開き、Google でログインする。
-初回はオンボーディングが出るが **入力せずに閉じる**（移行データと重複するため）。
+初回はオンボーディング（身体情報の登録）が出るが **入力しない**（移行データと重複するため）。
+なお初回ログイン時に、アプリが既定の器具 4 件（`bodyweight` / `tube` / `assist` / `vest`）を `fittrack.equipment` に
+自動作成する。旧データの同じIDと主キーが衝突して手順6が失敗するので、手順6の前に Persol で削除しておく:
+
+```sql
+DELETE FROM fittrack.equipment WHERE user_id = '新UUID';
+```
 
 > Persol に同じ Google アカウントが既にある（他アプリで使用済み）なら、ログインは同じユーザーになる。
 
