@@ -639,7 +639,7 @@ export default function FitTrack({ userId }: { userId: string }) {
             FITTRACK
           </h1>
           <button
-            onClick={() => supabase.auth.signOut()}
+            onClick={() => supabase.auth.signOut({ scope: 'local' })}
             className="text-gray-400 hover:text-gray-600 p-2 rounded-lg hover:bg-gray-100 transition-colors"
             title="ログアウト"
           >

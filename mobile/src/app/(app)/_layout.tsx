@@ -11,7 +11,8 @@ export default function AppLayout() {
   if (!session) return null
 
   const handleLogout = () => {
-    supabase.auth.signOut()
+    // 統合 Supabase（Persol）は他のアプリと同じアカウントを使う。既定の global だと他のアプリのセッションまで失効させる
+    supabase.auth.signOut({ scope: 'local' })
   }
 
   return (
