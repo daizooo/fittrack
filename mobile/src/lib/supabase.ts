@@ -12,7 +12,9 @@ if (!supabaseUrl || !supabaseAnonKey) {
   )
 }
 
-export const supabase = createClient(supabaseUrl ?? '', supabaseAnonKey ?? '', {
+// 統合プロジェクト「Persol」の fittrack スキーマ専任（Web版と同じ）。
+export const supabase = createClient<any, 'fittrack'>(supabaseUrl ?? '', supabaseAnonKey ?? '', {
+  db: { schema: 'fittrack' },
   auth: {
     storage: AsyncStorage,
     autoRefreshToken: true,

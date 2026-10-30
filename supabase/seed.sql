@@ -1,7 +1,7 @@
 -- FitTrack seed data — 2026/7/11 (土) workout record
 --
 -- Usage:
---   1. Run migrations/001_initial.sql first
+--   1. Run migrations/001_fittrack_schema.sql first
 --   2. Create a user account via Google login in the app
 --   3. Find your user ID in: Supabase Dashboard > Authentication > Users
 --   4. Replace USER_ID_HERE below with your actual UUID
@@ -11,7 +11,7 @@ DO $$
 DECLARE
   target_user_id uuid := 'USER_ID_HERE'::uuid;
 BEGIN
-  INSERT INTO records (id, user_id, full_date, date, day, type, category, exercises)
+  INSERT INTO fittrack.records (id, user_id, full_date, date, day, type, category, exercises)
   VALUES (
     1720656000000,
     target_user_id,
