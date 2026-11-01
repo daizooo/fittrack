@@ -2,136 +2,171 @@ import { useState, useEffect, type FormEvent } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import { supabase } from './lib/supabase'
 import FitTrack from './components/FitTrack'
+import { redeemLoginCode, LOGIN_CODE_LENGTH } from './lib/loginHandoff'
 
-const GoogleIcon = () => (
-  <svg width="20" height="20" viewBox="0 0 48 48">
-    <path fill="#FFC107" d="M43.611 20.083H42V20H24v8h11.303c-1.649 4.657-6.08 8-11.303 8-6.627 0-12-5.373-12-12s5.373-12 12-12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4 12.955 4 4 12.955 4 24s8.955 20 20 20 20-8.955 20-20c0-1.341-.138-2.65-.389-3.917z"/>
-    <path fill="#FF3D00" d="m6.306 14.691 6.571 4.819C14.655 15.108 18.961 12 24 12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4 16.318 4 9.656 8.337 6.306 14.691z"/>
-    <path fill="#4CAF50" d="M24 44c5.166 0 9.86-1.977 13.409-5.192l-6.19-5.238A11.91 11.91 0 0 1 24 36c-5.202 0-9.619-3.317-11.283-7.946l-6.522 5.025C9.505 39.556 16.227 44 24 44z"/>
-    <path fill="#1976D2" d="M43.611 20.083H42V20H24v8h11.303a12.04 12.04 0 0 1-4.087 5.571l.003-.002 6.19 5.238C36.971 39.205 44 34 44 24c0-1.341-.138-2.65-.389-3.917z"/>
-  </svg>
+const OTP_MAX_LENGTH = 10 // Supabase のメール OTP は既定 6 桁（設定で最大 10 桁）
+
+const inputClass = 'w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm'
+const primaryButtonClass =
+  'w-full bg-gray-900 text-white font-bold py-3.5 px-4 rounded-xl active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed'
+
+const Logo = () => (
+  <div className="mb-8">
+    <div className="bg-blue-600 text-white w-14 h-14 flex items-center justify-center rounded-2xl text-2xl font-black mx-auto mb-4 shadow-lg shadow-blue-500/30">
+      F
+    </div>
+    <h1 className="text-2xl font-black text-gray-900 tracking-wider">FITTRACK</h1>
+    <p className="text-gray-500 text-sm mt-2">あなたのトレーニングを記録・分析</p>
+  </div>
 )
 
+type Step = 'email' | 'otp' | 'handoff'
+
+/**
+ * ログイン画面（メールアドレス → メールに届く確認コード）。
+ * - Google ログインは廃止（iPadOS 27 のホーム画面アプリで外部ページ遷移が完了しないため）
+ * - メールには確認コード（{{ .Token }}）とリンクの両方が載る（Persol の Magic Link テンプレート）
+ *   ホーム画面アプリではコードを入力、ブラウザならリンクを押すだけでもログインできる
+ * - iPadOS 27 の一部端末で type="email" / メール用キーボード / AutoFill 対象の欄に
+ *   フォーカスすると Safari ごと落ちるため、メール欄は通常キーボードの type="text"、
+ *   コード欄は落ちないことを確認済みの type="number" にしている
+ * - 補助として、ログイン済み端末で発行する 8 桁の「ログインコード」でも入れる
+ */
 function LoginScreen() {
+  const [step, setStep] = useState<Step>('email')
+  const [email, setEmail] = useState('')
+  const [code, setCode] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [info, setInfo] = useState<string | null>(null)
 
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
+  const go = (next: Step) => {
+    setStep(next)
+    setCode('')
+    setError(null)
+    setInfo(null)
+  }
 
-  // iPadOS のホーム画面アプリでは Google ログインのページが途中で閉じられ完了しないため、
-  // アプリ内で完結するメールアドレス＋パスワードのログインも用意する
-  const handlePasswordLogin = async (e: FormEvent) => {
+  const sendOtp = async (e?: FormEvent) => {
+    e?.preventDefault()
+    const address = email.trim()
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(address)) {
+      setError('メールアドレスの形式が正しくありません')
+      return
+    }
+    setIsLoading(true)
+    setError(null)
+    const { error } = await supabase.auth.signInWithOtp({
+      email: address,
+      options: { shouldCreateUser: true, emailRedirectTo: window.location.origin },
+    })
+    setIsLoading(false)
+    if (error) {
+      setError(error.status === 429 ? '送信回数の上限に達しました。しばらく待ってからやり直してください' : error.message)
+      return
+    }
+    go('otp')
+    setInfo(`${address} に確認コードを送りました`)
+  }
+
+  const verifyOtp = async (e: FormEvent) => {
     e.preventDefault()
     setIsLoading(true)
     setError(null)
-    const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password })
+    const { error } = await supabase.auth.verifyOtp({ email: email.trim(), token: code, type: 'email' })
     if (error) {
-      setError(
-        error.code === 'invalid_credentials'
-          ? 'メールアドレスまたはパスワードが違います。パスワード未設定の場合は、ブラウザで Google ログイン後「プロフィール」タブで設定してください'
-          : error.message
-      )
+      setError('コードが違うか、有効期限が切れています')
       setIsLoading(false)
     }
   }
 
-  const handleGoogleLogin = async () => {
+  const redeemHandoff = async (e: FormEvent) => {
+    e.preventDefault()
     setIsLoading(true)
     setError(null)
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: { redirectTo: window.location.origin }
-    })
-    if (error) {
-      setError(error.message)
+    const message = await redeemLoginCode(code)
+    if (message) {
+      setError(message)
       setIsLoading(false)
     }
   }
+
+  const codeInput = (label: string, maxLength: number) => (
+    <input
+      type="number"
+      aria-label={label}
+      placeholder={label}
+      value={code}
+      onChange={e => setCode(e.target.value.replace(/\D/g, '').slice(0, maxLength))}
+      className={`${inputClass} text-center tracking-widest`}
+    />
+  )
 
   return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center p-5">
       <div className="bg-white rounded-3xl p-8 shadow-sm border border-gray-100 max-w-sm w-full text-center">
-        <div className="mb-8">
-          <div className="bg-blue-600 text-white w-14 h-14 flex items-center justify-center rounded-2xl text-2xl font-black mx-auto mb-4 shadow-lg shadow-blue-500/30">
-            F
-          </div>
-          <h1 className="text-2xl font-black text-gray-900 tracking-wider">FITTRACK</h1>
-          <p className="text-gray-500 text-sm mt-2">あなたのトレーニングを記録・分析</p>
-        </div>
+        <Logo />
 
-        <div className="space-y-3 mb-8">
-          <div className="flex items-center gap-2 text-sm text-gray-600">
-            <span className="text-blue-500">✓</span> ワークアウト記録と履歴管理
-          </div>
-          <div className="flex items-center gap-2 text-sm text-gray-600">
-            <span className="text-blue-500">✓</span> タバタ・HIIT タイマー内蔵
-          </div>
-          <div className="flex items-center gap-2 text-sm text-gray-600">
-            <span className="text-blue-500">✓</span> 進捗グラフと分析ダッシュボード
-          </div>
-        </div>
-
+        {info && <div className="mb-4 p-3 bg-blue-50 border border-blue-100 rounded-xl text-sm text-blue-700">{info}</div>}
         {error && (
-          <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-600">
+          <div role="alert" className="mb-4 p-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-600">
             {error}
           </div>
         )}
 
-        <button
-          onClick={handleGoogleLogin}
-          disabled={isLoading}
-          className="w-full bg-white border border-gray-300 text-gray-700 font-bold py-3.5 px-4 rounded-xl flex items-center justify-center gap-3 hover:bg-gray-50 transition-colors shadow-sm active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed"
-        >
-          <GoogleIcon />
-          {isLoading ? 'ログイン中...' : 'Googleでログイン'}
-        </button>
+        {step === 'email' && (
+          <form onSubmit={sendOtp} className="space-y-3">
+            <input
+              type="text"
+              name="ft-mail"
+              aria-label="メールアドレス"
+              placeholder="メールアドレス"
+              autoComplete="off"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+              className={inputClass}
+            />
+            <button type="submit" disabled={isLoading || !email.trim()} className={primaryButtonClass}>
+              {isLoading ? '送信中...' : '確認コードを送る'}
+            </button>
+            <button type="button" onClick={() => go('handoff')} className="text-xs text-blue-600 font-bold pt-2">
+              ほかの端末で発行したログインコードで入る
+            </button>
+          </form>
+        )}
 
-        <div className="flex items-center gap-3 my-5 text-xs text-gray-400">
-          <span className="flex-1 h-px bg-gray-200" />または<span className="flex-1 h-px bg-gray-200" />
-        </div>
+        {step === 'otp' && (
+          <form onSubmit={verifyOtp} className="space-y-3">
+            {codeInput('メールに届いた確認コード', OTP_MAX_LENGTH)}
+            <button type="submit" disabled={isLoading || code.length < 6} className={primaryButtonClass}>
+              {isLoading ? '確認中...' : 'ログイン'}
+            </button>
+            <div className="flex justify-between pt-2 text-xs font-bold">
+              <button type="button" onClick={() => go('email')} className="text-gray-500">メールアドレスを変更</button>
+              <button type="button" onClick={() => sendOtp()} disabled={isLoading} className="text-blue-600">コードを再送</button>
+            </div>
+          </form>
+        )}
 
-        {/* iPadOS の AutoFill がメール／パスワード欄のフォーカス時に Safari ごと落ちる端末があるため、
-            type="email"/"password" や autocomplete を使わず AutoFill の対象外にする。
-            キーボードは inputMode でメール用、パスワードは .text-secure で伏せ字表示 */}
-        <form onSubmit={handlePasswordLogin} className="space-y-3">
-          <input
-            type="text"
-            name="ft-login-id"
-            aria-label="メールアドレス"
-            placeholder="メールアドレス"
-            autoComplete="off"
-            inputMode="email"
-            autoCapitalize="none"
-            autoCorrect="off"
-            spellCheck={false}
-            value={email}
-            onChange={e => setEmail(e.target.value)}
-            className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm"
-          />
-          <input
-            type="text"
-            name="ft-login-secret"
-            aria-label="パスワード"
-            placeholder="パスワード"
-            autoComplete="off"
-            autoCapitalize="none"
-            autoCorrect="off"
-            spellCheck={false}
-            value={password}
-            onChange={e => setPassword(e.target.value)}
-            className="text-secure w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm"
-          />
-          <button
-            type="submit"
-            disabled={isLoading || !email || !password}
-            className="w-full bg-gray-900 text-white font-bold py-3.5 px-4 rounded-xl active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed"
-          >
-            メールアドレスでログイン
-          </button>
-        </form>
+        {step === 'handoff' && (
+          <form onSubmit={redeemHandoff} className="space-y-3">
+            {codeInput(`ログインコード（${LOGIN_CODE_LENGTH}桁）`, LOGIN_CODE_LENGTH)}
+            <button type="submit" disabled={isLoading || code.length !== LOGIN_CODE_LENGTH} className={primaryButtonClass}>
+              {isLoading ? '確認中...' : 'コードでログイン'}
+            </button>
+            <p className="text-[11px] text-gray-500 leading-relaxed text-left">
+              ログイン済みの端末で FitTrack を開き、「プロフィール」タブの「ログインコード」から発行できます（有効期限3分・1回限り）。
+            </p>
+            <button type="button" onClick={() => go('email')} className="text-xs text-gray-500 font-bold">
+              メールアドレスでログインする
+            </button>
+          </form>
+        )}
 
-        <p className="text-[11px] text-gray-400 mt-4">
+        <p className="text-[11px] text-gray-400 mt-6">
           ログインすることで利用規約およびプライバシーポリシーに同意したものとみなします
         </p>
       </div>
