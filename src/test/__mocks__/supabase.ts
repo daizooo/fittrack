@@ -94,8 +94,6 @@ const makeQuery = (table: string) => {
 export const getMockRecords = () => stores.records
 export const getMockTable = (table: string) => stores[table] ?? []
 
-export const openedFromEmailLink = false
-
 export const supabase = {
   auth: {
     getSession: vi.fn().mockResolvedValue({
