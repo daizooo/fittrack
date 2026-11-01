@@ -38,7 +38,7 @@ export default function LoginCodeSection() {
   return (
     <div className="pt-4 space-y-3">
       <p className="text-xs text-gray-500 leading-relaxed">
-        ホーム画面に追加したアプリなど、Google ログインができない環境でログインするためのコードです。
+        メールアドレスの入力ができない端末（ホーム画面に追加したアプリなど）でログインするためのコードです。
         発行したコードを、その環境のログイン画面の「ログインコード」に入力してください（有効期限3分・1回限り）。
       </p>
       {code && !expired && (
