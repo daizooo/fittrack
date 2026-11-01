@@ -5,7 +5,7 @@ import { createLoginCode } from '../lib/loginHandoff'
  * ログインコードの発行。ここで発行した 8 桁の数字を、
  * ログインできない環境（iPadOS のホーム画面アプリ等）のログイン画面で入力するとログインできる。
  */
-export default function LoginCodeSection() {
+export default function LoginCodeSection({ autoIssue = false }: { autoIssue?: boolean }) {
   const [code, setCode] = useState<string | null>(null)
   const [expiresAt, setExpiresAt] = useState<number | null>(null)
   const [now, setNow] = useState(Date.now())
@@ -20,6 +20,12 @@ export default function LoginCodeSection() {
 
   const remaining = expiresAt ? Math.max(0, Math.ceil((expiresAt - now) / 1000)) : 0
   const expired = code !== null && remaining === 0
+
+  useEffect(() => {
+    if (autoIssue) issue()
+    // 初回表示時に一度だけ自動発行する
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const issue = async () => {
     setLoading(true)
@@ -38,8 +44,8 @@ export default function LoginCodeSection() {
   return (
     <div className="pt-4 space-y-3">
       <p className="text-xs text-gray-500 leading-relaxed">
-        メールアドレスの入力ができない端末（ホーム画面に追加したアプリなど）でログインするためのコードです。
-        発行したコードを、その環境のログイン画面の「ログインコード」に入力してください（有効期限3分・1回限り）。
+        ホーム画面に追加したアプリなど、別の環境でログインするためのコードです。
+        その環境のログイン画面の「ログインコード」欄に入力してください（有効期限3分・1回限り）。
       </p>
       {code && !expired && (
         <div className="text-center p-4 bg-blue-50 rounded-xl">
