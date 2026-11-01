@@ -53,3 +53,8 @@
     font-size: 16px !important;
   }
 }
+
+/* type="password" を使わずに入力を伏せ字表示する（iOS AutoFill 回避用） */
+.text-secure {
+  -webkit-text-security: disc;
+}
