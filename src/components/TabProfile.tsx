@@ -7,7 +7,7 @@ import { supabase } from '../lib/supabase'
 import { generateEquipmentOptions } from '../lib/equipmentUtils'
 import { calcAge, localISODate } from '../lib/dates'
 import { useUnsavedGuard } from '../lib/unsavedGuard'
-import PasswordSection from './PasswordSection'
+import LoginCodeSection from './LoginCodeSection'
 import type {
   EquipmentItem, EquipmentWeightConfig, Profile, BodyLog, WorkoutPlan, WorkoutRecord
 } from '../types'
@@ -786,9 +786,9 @@ export default function TabProfile({
         </div>
       </Section>
 
-      {/* ── ログイン用パスワード ──────────────────────────────────────────────── */}
-      <Section title="ログイン用パスワード" icon={<KeyRound size={18} className="text-blue-500" />}>
-        <PasswordSection />
+      {/* ── ログインコード ─────────────────────────────────────────────────────── */}
+      <Section title="ログインコード" icon={<KeyRound size={18} className="text-blue-500" />}>
+        <LoginCodeSection />
       </Section>
 
       {/* ── Equipment delete warning modal ────────────────────────────────────── */}

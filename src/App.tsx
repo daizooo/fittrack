@@ -2,6 +2,7 @@ import { useState, useEffect, type FormEvent } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import { supabase } from './lib/supabase'
 import FitTrack from './components/FitTrack'
+import { redeemLoginCode, LOGIN_CODE_LENGTH } from './lib/loginHandoff'
 
 const GoogleIcon = () => (
   <svg width="20" height="20" viewBox="0 0 48 48">
@@ -16,22 +17,17 @@ function LoginScreen() {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
+  const [code, setCode] = useState('')
 
-  // iPadOS のホーム画面アプリでは Google ログインのページが途中で閉じられ完了しないため、
-  // アプリ内で完結するメールアドレス＋パスワードのログインも用意する
-  const handlePasswordLogin = async (e: FormEvent) => {
+  // iPadOS 27 の Safari／ホーム画面アプリでは Google のページやメール欄の入力で落ちる端末があるため、
+  // 数字だけで完結する「ログインコード」でも入れるようにする（発行はログイン済みブラウザのプロフィールタブ）
+  const handleCodeLogin = async (e: FormEvent) => {
     e.preventDefault()
     setIsLoading(true)
     setError(null)
-    const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password })
-    if (error) {
-      setError(
-        error.code === 'invalid_credentials'
-          ? 'メールアドレスまたはパスワードが違います。パスワード未設定の場合は、ブラウザで Google ログイン後「プロフィール」タブで設定してください'
-          : error.message
-      )
+    const message = await redeemLoginCode(code)
+    if (message) {
+      setError(message)
       setIsLoading(false)
     }
   }
@@ -91,44 +87,26 @@ function LoginScreen() {
           <span className="flex-1 h-px bg-gray-200" />または<span className="flex-1 h-px bg-gray-200" />
         </div>
 
-        {/* iPadOS の AutoFill がメール／パスワード欄のフォーカス時に Safari ごと落ちる端末があるため、
-            type="email"/"password" や autocomplete を使わず AutoFill の対象外にする。
-            キーボードは inputMode でメール用、パスワードは .text-secure で伏せ字表示 */}
-        <form onSubmit={handlePasswordLogin} className="space-y-3">
+        {/* 体重欄などと同じ type="number" の入力欄は該当端末でも落ちないことを確認済み */}
+        <form onSubmit={handleCodeLogin} className="space-y-3">
           <input
-            type="text"
-            name="ft-login-id"
-            aria-label="メールアドレス"
-            placeholder="メールアドレス"
-            autoComplete="off"
-            inputMode="email"
-            autoCapitalize="none"
-            autoCorrect="off"
-            spellCheck={false}
-            value={email}
-            onChange={e => setEmail(e.target.value)}
-            className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm"
-          />
-          <input
-            type="text"
-            name="ft-login-secret"
-            aria-label="パスワード"
-            placeholder="パスワード"
-            autoComplete="off"
-            autoCapitalize="none"
-            autoCorrect="off"
-            spellCheck={false}
-            value={password}
-            onChange={e => setPassword(e.target.value)}
-            className="text-secure w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm"
+            type="number"
+            aria-label="ログインコード"
+            placeholder={`ログインコード（${LOGIN_CODE_LENGTH}桁）`}
+            value={code}
+            onChange={e => setCode(e.target.value.replace(/\D/g, '').slice(0, LOGIN_CODE_LENGTH))}
+            className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm text-center tracking-widest"
           />
           <button
             type="submit"
-            disabled={isLoading || !email || !password}
+            disabled={isLoading || code.length !== LOGIN_CODE_LENGTH}
             className="w-full bg-gray-900 text-white font-bold py-3.5 px-4 rounded-xl active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed"
           >
-            メールアドレスでログイン
+            コードでログイン
           </button>
+          <p className="text-[11px] text-gray-500 leading-relaxed text-left">
+            コードは、ログイン済みのブラウザ（Chrome など）で FitTrack を開き、「プロフィール」タブの「ログインコード」から発行できます（有効期限3分・1回限り）。
+          </p>
         </form>
 
         <p className="text-[11px] text-gray-400 mt-4">
