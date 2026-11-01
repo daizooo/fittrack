@@ -20,6 +20,8 @@ function toMessage(err: { code?: string; message: string }): string {
  * ブラウザで Google ログインした状態でパスワードを設定し、
  * ホーム画面アプリではメールアドレス＋パスワードでログインしてもらう。
  */
+// iPadOS の AutoFill がパスワード欄フォーカス時に Safari ごと落ちる端末があるため、
+// type="password" を使わず .text-secure で伏せ字にする（ログイン画面と同じ方針）
 export default function PasswordSection() {
   const [email, setEmail] = useState<string | null>(null)
   const [password, setPassword] = useState('')
@@ -63,25 +65,29 @@ export default function PasswordSection() {
         {email ? <span className="font-bold text-gray-700"> {email} </span> : ' メールアドレス '}
         とパスワードでログインできます（Google ログインが使えない端末向け）。
       </p>
-      {/* iOS のパスワード自動入力にメールアドレスを紐づけるための非表示項目 */}
-      <input type="email" name="email" autoComplete="username" value={email ?? ''} readOnly hidden />
       <input
-        type="password"
+        type="text"
+        autoCapitalize="none"
+        autoCorrect="off"
+        spellCheck={false}
         aria-label="新しいパスワード"
         placeholder={`新しいパスワード（${MIN_PASSWORD_LENGTH}文字以上）`}
-        autoComplete="new-password"
+        autoComplete="off"
         value={password}
         onChange={e => setPassword(e.target.value)}
-        className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm"
+        className="text-secure w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm"
       />
       <input
-        type="password"
+        type="text"
+        autoCapitalize="none"
+        autoCorrect="off"
+        spellCheck={false}
         aria-label="新しいパスワード（確認）"
         placeholder="もう一度入力"
-        autoComplete="new-password"
+        autoComplete="off"
         value={confirm}
         onChange={e => setConfirm(e.target.value)}
-        className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm"
+        className="text-secure w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm"
       />
       {error && (
         <div role="alert" className="p-2.5 bg-red-50 border border-red-200 rounded-xl text-xs font-bold text-red-600">{error}</div>

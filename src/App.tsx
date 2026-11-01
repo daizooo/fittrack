@@ -91,26 +91,36 @@ function LoginScreen() {
           <span className="flex-1 h-px bg-gray-200" />または<span className="flex-1 h-px bg-gray-200" />
         </div>
 
+        {/* iPadOS の AutoFill がメール／パスワード欄のフォーカス時に Safari ごと落ちる端末があるため、
+            type="email"/"password" や autocomplete を使わず AutoFill の対象外にする。
+            キーボードは inputMode でメール用、パスワードは .text-secure で伏せ字表示 */}
         <form onSubmit={handlePasswordLogin} className="space-y-3">
           <input
-            type="email"
+            type="text"
+            name="ft-login-id"
             aria-label="メールアドレス"
             placeholder="メールアドレス"
-            autoComplete="username"
+            autoComplete="off"
             inputMode="email"
             autoCapitalize="none"
+            autoCorrect="off"
+            spellCheck={false}
             value={email}
             onChange={e => setEmail(e.target.value)}
             className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm"
           />
           <input
-            type="password"
+            type="text"
+            name="ft-login-secret"
             aria-label="パスワード"
             placeholder="パスワード"
-            autoComplete="current-password"
+            autoComplete="off"
+            autoCapitalize="none"
+            autoCorrect="off"
+            spellCheck={false}
             value={password}
             onChange={e => setPassword(e.target.value)}
-            className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm"
+            className="text-secure w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm"
           />
           <button
             type="submit"
