@@ -41,3 +41,15 @@
     display: none;
   }
 }
+
+/*
+ * iOS/iPadOS は 16px 未満の入力欄にフォーカスすると画面を自動ズームする。
+ * ホーム画面アプリでは入力欄タップ直後にアプリが落ちて再起動する事象があり、
+ * その誘因候補の自動ズームを止めるため、iOS に限り入力欄を 16px にする。
+ * （Tailwind の text-sm 等より優先させるためレイヤー外 + !important）
+ */
+@supports (-webkit-touch-callout: none) {
+  input, select, textarea {
+    font-size: 16px !important;
+  }
+}
