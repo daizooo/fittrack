@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, type FormEvent } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import { supabase } from './lib/supabase'
 import FitTrack from './components/FitTrack'
@@ -15,6 +15,26 @@ const GoogleIcon = () => (
 function LoginScreen() {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+
+  // iPadOS のホーム画面アプリでは Google ログインのページが途中で閉じられ完了しないため、
+  // アプリ内で完結するメールアドレス＋パスワードのログインも用意する
+  const handlePasswordLogin = async (e: FormEvent) => {
+    e.preventDefault()
+    setIsLoading(true)
+    setError(null)
+    const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password })
+    if (error) {
+      setError(
+        error.code === 'invalid_credentials'
+          ? 'メールアドレスまたはパスワードが違います。パスワード未設定の場合は、ブラウザで Google ログイン後「プロフィール」タブで設定してください'
+          : error.message
+      )
+      setIsLoading(false)
+    }
+  }
 
   const handleGoogleLogin = async () => {
     setIsLoading(true)
@@ -66,6 +86,40 @@ function LoginScreen() {
           <GoogleIcon />
           {isLoading ? 'ログイン中...' : 'Googleでログイン'}
         </button>
+
+        <div className="flex items-center gap-3 my-5 text-xs text-gray-400">
+          <span className="flex-1 h-px bg-gray-200" />または<span className="flex-1 h-px bg-gray-200" />
+        </div>
+
+        <form onSubmit={handlePasswordLogin} className="space-y-3">
+          <input
+            type="email"
+            aria-label="メールアドレス"
+            placeholder="メールアドレス"
+            autoComplete="username"
+            inputMode="email"
+            autoCapitalize="none"
+            value={email}
+            onChange={e => setEmail(e.target.value)}
+            className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm"
+          />
+          <input
+            type="password"
+            aria-label="パスワード"
+            placeholder="パスワード"
+            autoComplete="current-password"
+            value={password}
+            onChange={e => setPassword(e.target.value)}
+            className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm"
+          />
+          <button
+            type="submit"
+            disabled={isLoading || !email || !password}
+            className="w-full bg-gray-900 text-white font-bold py-3.5 px-4 rounded-xl active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed"
+          >
+            メールアドレスでログイン
+          </button>
+        </form>
 
         <p className="text-[11px] text-gray-400 mt-4">
           ログインすることで利用規約およびプライバシーポリシーに同意したものとみなします

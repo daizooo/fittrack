@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react'
 import {
   Plus, Trash2, Save, Download, AlertTriangle, X,
-  ChevronDown, ChevronUp, User, Weight, Dumbbell, Edit3, Check, RotateCcw
+  ChevronDown, ChevronUp, User, Weight, Dumbbell, Edit3, Check, RotateCcw, KeyRound
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { generateEquipmentOptions } from '../lib/equipmentUtils'
 import { calcAge, localISODate } from '../lib/dates'
 import { useUnsavedGuard } from '../lib/unsavedGuard'
+import PasswordSection from './PasswordSection'
 import type {
   EquipmentItem, EquipmentWeightConfig, Profile, BodyLog, WorkoutPlan, WorkoutRecord
 } from '../types'
@@ -783,6 +784,11 @@ export default function TabProfile({
             <Download size={18} /> JSONをダウンロード
           </button>
         </div>
+      </Section>
+
+      {/* ── ログイン用パスワード ──────────────────────────────────────────────── */}
+      <Section title="ログイン用パスワード" icon={<KeyRound size={18} className="text-blue-500" />}>
+        <PasswordSection />
       </Section>
 
       {/* ── Equipment delete warning modal ────────────────────────────────────── */}
