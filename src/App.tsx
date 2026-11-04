@@ -32,7 +32,7 @@ type Step = 'email' | 'otp' | 'handoff'
  *   コード欄は落ちないことを確認済みの type="number" にしている
  * - 補助として、ログイン済み端末で発行する 8 桁の「ログインコード」でも入れる
  */
-function LoginScreen() {
+function LoginScreen({ reason }: { reason?: string | null }) {
   const [step, setStep] = useState<Step>('email')
   const [email, setEmail] = useState('')
   const [code, setCode] = useState('')
@@ -169,6 +169,12 @@ function LoginScreen() {
         <p className="text-[11px] text-gray-400 mt-6">
           ログインすることで利用規約およびプライバシーポリシーに同意したものとみなします
         </p>
+        {reason && (
+          // ログインが外れた理由の診断表示（原因調査用）。どの経路で開いたか（アドレス・ホーム画面アプリか）も出す
+          <p data-testid="login-reason" className="text-[10px] text-gray-400 mt-3 leading-relaxed break-all">
+            {reason}（{window.location.host}・{isStandalone() ? 'ホーム画面アプリ' : 'ブラウザ'}）
+          </p>
+        )}
       </div>
     </div>
   )
@@ -187,24 +193,39 @@ function LoadingScreen() {
   )
 }
 
+function isStandalone(): boolean {
+  return (navigator as Navigator & { standalone?: boolean }).standalone === true
+    || window.matchMedia?.('(display-mode: standalone)').matches === true
+}
+
 export default function App() {
   const [session, setSession] = useState<Session | null>(null)
   const [loading, setLoading] = useState(true)
+  const [loggedOutReason, setLoggedOutReason] = useState<string | null>(null)
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    // iOS が保存データ（ログイン情報）を自動で消さないよう、永続化を依頼する（非対応・拒否でも無害）
+    navigator.storage?.persist?.().catch(() => {})
+
+    supabase.auth.getSession().then(({ data: { session }, error }) => {
       setSession(session)
+      if (!session) {
+        setLoggedOutReason(error
+          ? `起動時にログイン情報を復元できませんでした: ${error.message}`
+          : '起動時に保存済みのログイン情報がありませんでした')
+      }
       setLoading(false)
     })
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       setSession(session)
+      if (!session && event === 'SIGNED_OUT') setLoggedOutReason('ログイン情報が失効または削除されました（SIGNED_OUT）')
     })
 
     return () => subscription.unsubscribe()
   }, [])
 
   if (loading) return <LoadingScreen />
-  if (!session) return <LoginScreen />
+  if (!session) return <LoginScreen reason={loggedOutReason} />
   return <FitTrack userId={session.user.id} />
 }
